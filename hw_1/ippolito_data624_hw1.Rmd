@@ -1,0 +1,315 @@
+---
+title: "data624_hw1"
+author: "Michael Ippolito"
+date: "2023-05-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(fpp2)
+library(seasonal)
+
+```
+
+
+## HA 2.1 (a)
+
+*Use autoplot() to plot each of these in separate plots (gold, woolyrnq and gas).*
+
+```{r}
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+# Autoplot gold data
+data(gold)
+autoplot(gold)
+
+# Autoplot wolyrnq data
+data(woolyrnq)
+autoplot(woolyrnq)
+
+# Autoplot gas data
+data(gas)
+autoplot(gas)
+
+```
+
+
+## HA 2.1 (b)
+
+*What is the frequency of each series? Hint: apply the frequency() function.*
+
+```{r}
+
+# Show frequencies
+print(paste0("Frequency of gold data: ", frequency(gold)))
+print(paste0("Frequency of woolyrnq data: ", frequency(woolyrnq)))
+print(paste0("Frequency of gas data: ", frequency(gas)))
+
+```
+
+
+## HA 2.1 (c)
+
+*Use which.max() to spot the outlier in the gold series. Which observation was it?*
+
+```{r}
+
+# Outlier in gold series
+print(paste0("Max in gold data appears at index ", which.max(gold), " (", as.Date("1985-01-01") + which.max(gold), ")"))
+print(paste0("Max value in gold data is ", gold[which.max(gold)]))
+
+```
+
+
+## HA 2.3 (a)
+
+*Download some monthly Australian retail data from the book website. These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file. You can read the data into R with the following script:*
+
+```{r}
+
+# Load data
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+
+```
+
+
+## HA 2.3 (b)
+
+* Select one of the time series as follows (but replace the column name with your own chosen column):*
+
+```{r}
+
+# Choose variable A3349415T
+myts <- ts(retaildata[,"A3349415T"], frequency=12, start=c(1982, 4))
+head(myts, 24)
+
+```
+
+
+## HA 2.3 (c)
+
+*Explore your chosen retail time series using the following functions:*
+autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf()
+Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+
+There is a gradual rise from around 20 to about 100 units from 1982 through around 2007, when the trend takes a downward turn, possibly corresponding to the global economic downturn at that time. Seasonally, sales are fairly steady throughout the year until December, when there is an uptick. The uptick appears to be more pronounced in more recent years, with smaller December peaks in the 1980s. There doesn't appear to be any cyclic patterns to the time series.
+
+```{r}
+
+# Plots - autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf()
+
+# Time-series autoplot
+autoplot(myts)
+
+# Seasonal plot
+myts %>% ggseasonplot()
+
+# Seasonal subseries plots
+myts %>% ggsubseriesplot()
+
+# Lag plot
+myts %>%gglagplot(lags=12, do.lines=T)
+
+# Autocorrelation function plot (correlogram)
+myts %>% ggAcf(lag=144)
+
+```
+
+
+## HA 6.2 (a)
+
+*Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?*
+
+There is an upward trend from roughly 975 to 1375. There doesn't seem to be any cyclicty, but there is a pronounced seasonal component in which the data peak in September and dipping in February.
+
+```{r}
+
+# Load data
+data(plastics)
+str(plastics)
+summary(plastics)
+head(plastics, 24)
+
+# Time-series plot
+autoplot(plastics)
+
+```
+
+
+## HA 6.2 (b)
+
+*Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.*
+
+```{r}
+
+# Function to calculate MA
+calcMA <- function(tsvals, m) {
+
+    # For odd m, each moving average will be calculated using the timeseries values from (t - k) to (t + k), where
+    #     k = (m - 1) / 2, since m = 2k + 1.
+    
+    # For even m, calculate each average from timeseries values from (t - k_lo) to (t + k_hi), where
+    #     k_lo = -floor((m - 1) / 2)
+    # and
+    #     k_hi = ceiling((m - 1) / 2)
+    # After calculating m-MA, caclate 2xm-MA by calling calcMA recursively with m = 2
+    
+    # Calculate k based on m = 2k + 1
+    if ((m %% 2) == 0) {
+        
+        # Even m
+        k_lo <- floor((m - 1) / 2)
+        k_hi <- ceiling((m - 1) / 2)
+        
+    } else {
+        
+        # Odd m
+        k_lo <- (m - 1) / 2
+        k_hi <- k_lo
+    }
+    
+    # Find starting and ending values of t
+    t_start <- 1 + k_lo
+    t_end <- length(tsvals) - k_hi
+    
+    # Error check to make sure t_end isn't zero or negative
+    if (t_end < 1) {
+        print("Ending value can't be zero or negative!")
+        return(c(0))
+    }
+    
+    # MA calcs
+    print(paste0("Calculating ", m, " -MA from ", t_start, " to ", t_end, " using sliding window from t-", k_lo, " to t+", k_hi))
+    retval <- c()  # Initialize return value
+    for (t in seq(t_start, t_end)) {
+        #print(paste0("t=", t, ", t - k_lo=", t - k_lo, ", t + k_hi=", t+ k_hi, ", mean=", mean(tsvals[(t - k_lo):(t + k_hi)])))
+        retval <- c(retval, mean(tsvals[(t - k_lo):(t + k_hi)]))
+    }
+
+    # Handle even values of m
+    if ((m != 2) & (m %% 2) == 0) {
+        retval <- calcMA(retval, 2)
+    }
+    
+    # Pad NAs at front and back to keep the timeseries length the same as the original series
+    if (m != 2) {
+        retval <- c(rep(NA, floor(m / 2)), retval)
+        retval <- c(retval, rep(NA, floor(m / 2)))
+    }
+
+    # Return
+    return(retval)
+
+}
+
+# Calculate 12-MA
+trendcycle <- ts(calcMA(plastics, 12), frequency=12)
+print("trend-cycle:")
+trendcycle
+trendcycle %>% autoplot() +
+    ggtitle("Trend-cycle (2x12 Moving average)")
+print("")
+
+# Check using built-in function
+print("Checking with build-in function")
+plastics %>% ma(12, centre=T)
+
+# Calculate detrended series using classical multiplicative decomposition
+detrended <- plastics / trendcycle
+print("detrended data:")
+detrended
+
+# Calculate seasonal component as the average of the detrended values for each period
+seasonalvals <- c()
+for (i in seq(1, 12)) {
+    
+    # Create boolean array containing true values for every value corresponding to the month of integer i
+    bool_array <- c()
+    for (j in seq(1, length(detrended))) {
+        bool_array <- c(bool_array, (j %% 12) == (i %% 12))
+    }
+    seasonalvals <- c(seasonalvals, mean(detrended[bool_array], na.rm=T))
+}
+seasonalvals <- ts(rep(seasonalvals, floor(length(detrended) / 12)), frequency=12)
+print("seasonal data:")
+seasonalvals
+seasonalvals %>% autoplot() +
+    ggtitle("Seasonal component")
+
+```
+
+
+## HA 6.2 (c)
+
+*Do the results support the graphical interpretation from part a?*
+
+Yes, the trend-cycle graph illustrates that the trend is generally upward from roughly 975 to 1375, which corresponds visually to the average values on the full time-series plot. Likewise, the seasonal graphs are close to the seasonality evident in the full plot, peaking in September and reaching its nadir in February.
+
+## HA 6.2 (d)
+
+*Compute and plot the seasonally adjusted data.*
+
+```{r}
+
+# Compute seasonally adjusted data
+seasonally_adj <- plastics / seasonalvals
+print("seasonally adjusted data:")
+seasonally_adj
+seasonally_adj %>% autoplot() +
+    ggtitle("Seasonally adjusted data")
+
+```
+
+
+## HA 6.2 (d)
+
+*Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?*
+
+As shown below, There is a noticeable effect on the trend, which exhibits a noticeable increase in the moving average over the entire year in which the outlier was introduced. Additionally, the seasonal data exhibits a sharp upward spike for the month in which the outlier was introduced (November). And as expected, the remainder for the month where the outlier was added exhibits a sharp increase.
+
+```{r}
+
+# Add an outlier near the middle
+tmp_plastics <- plastics
+tmp_plastics[30] <- tmp_plastics[30] + 500
+tmp_plastics %>% 
+    decompose(type="multiplicative") %>%
+    autoplot() + 
+    xlab('Year') +
+    ggtitle("Classical multiplicative decomposition with outlier near middle")
+
+```
+
+
+## HA 6.2 (f)
+
+*Does it make any difference if the outlier is near the end rather than in the middle of the time series?*
+
+There is less of an effect if the outlier is introduced at the beginning or end, since a twelve-month moving average is taken; this means the first and last six values of the trend-cycle data can't be calculated and, therefore, won't affect the plots for the trend-cycle or seasonally adjusted data.
+
+```{r}
+
+# Add outlier near beginning
+tmp_plastics <- plastics
+tmp_plastics[2] <- tmp_plastics[2] + 500
+tmp_plastics %>% 
+    decompose(type="multiplicative") %>%
+    autoplot() + 
+    xlab('Year') +
+    ggtitle("Classical multiplicative decomposition with outlier near beginning")
+
+# Add outlier near beginning
+tmp_plastics <- plastics
+tmp_plastics[58] <- tmp_plastics[58] + 500
+tmp_plastics %>% 
+    decompose(type="multiplicative") %>%
+    autoplot() + 
+    xlab('Year') +
+    ggtitle("Classical multiplicative decomposition with outlier near end")
+
+```
