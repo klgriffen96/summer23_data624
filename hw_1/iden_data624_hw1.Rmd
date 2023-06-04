@@ -1,0 +1,207 @@
+---
+title: "DATA 624 HW1"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    ##usebookdown: true
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# load packages 
+library(tidyverse)
+library(fpp2)
+library(gridExtra)
+```
+
+# HA 2.1
+
+#### Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
+
+```{r}
+help('gold')
+```
+
+Time series data containing daily morning gold prices in US dollars, 1 January 1985 - 31 March 1989.
+
+```{r}
+help('woolyrnq')
+```
+
+Time series data containing quarterly production of woollen yarn in Australia: tonnes. Mar 1965 - Sep 1994. Source: Time Series Data Library. <https://pkg.yangzhuoranyang.com/tsdl/>
+
+```{r}
+help('gas')
+```
+
+Time series data containing Australian monthly gas production: 1956-1995. Source: Australian Bureau of Statistics.
+
+#### a) Use autoplot() to plot some of the series in these data sets.
+
+```{r, cache=TRUE, fig.height=15}
+p1 = autoplot(gold) + ggtitle('Price of Gold: 1985-1989') + ylab('price') + xlab('')
+p2 = autoplot(woolyrnq) + ggtitle('Quarterly Production of Woollen Yarn in Australia: 1965 - 1994') + ylab('tonnes') + xlab('')
+p3 = autoplot(gas) + ggtitle('Australian monthly gas production: 1956-1995') + ylab('gas') + xlab('')
+
+grid.arrange(p1, p2, p3, nrow=3)
+```
+
+#### b) What is the frequency of each series? Hint: apply the `frequency()` function.
+
+```{r}
+string = 'data = %d times per year.\n'
+cat('gold', sprintf(string, frequency(gold)))
+cat('wool', sprintf(string, frequency(woolyrnq)))
+cat('gas', sprintf(string, frequency(gas)))
+```
+
+Gold data is yearly, Wool data is quarterly, and Gas data is monthly.
+
+#### c) Use `which.max()` to spot the outlier in the `gold` series. Which observation was it?
+
+```{r}
+cat(sprintf('day: %d\nprice: $%1.2f', which.max(gold), gold[which.max(gold)]))
+```
+
+The outlier is at observation day 770. The price of gold on this day was \$593.70.
+
+# HA 2.3
+
+#### Download some monthly Australian retail data from [the book website](https://otexts.com/fpp2/extrafiles/retail.xlsx). These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+
+#### You can read the data into R with the following script:
+
+```{r, cache=TRUE}
+retaildata = readxl::read_excel('retail.xlsx', skip = 1)
+```
+
+#### The second argument (skip = 1) is required because the Excel sheet has two header rows.
+
+#### Select one of the time series as follows (but replace the column name with your own chosen column):
+
+```{r, cache=TRUE}
+myts = ts(retaildata[,'A3349396W'],
+          frequency = 12, start = c(1982, 4))
+```
+
+#### Explore your chosen retail time series using the following functions:
+
+`autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`.
+
+#### Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+
+```{r, cache=TRUE, fig.height=30}
+auto = autoplot(myts) + ggtitle('lineplot')
+season = ggseasonplot(myts) + ggtitle('season plot')
+subseries = ggsubseriesplot(myts) + ggtitle('subseries plot')
+lag = gglagplot(myts) + ggtitle('lagplot') 
+acf = ggAcf(myts) + ggtitle('ACF plot')
+
+grid.arrange(auto, season, subseries, lag, acf, nrow=5)
+```
+
+We can see from the **line plot** that there is a clear, increasing trend, and there is some seasonality. The **lagged scatterplots** show that the relationships are strongly positive across all lags, but dramatically positive at lag 12. This indicates a high annual correlation. We can see this in the **ACF** plot as well. We also notice that the correlation, while remaining positive, becomes less strongly positive as time goes by, and then peaks again every 12 months. The **subseries** plot shows us that December has the highest average monthly sales and lowest in February, which we can see from the **seasonal** plot is a trend that is consistent across years.
+
+# HA 6.2
+
+#### The `plastics` data set consists of monthly sales (in thousands) of product A for a plastics manufacturer for five years.
+
+#### a) Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend cycle?
+
+```{r, cache=TRUE}
+autoplot(plastics) + ggtitle('Monthly Sales of Product A') + ylab('Sales (in Thousands)') + xlab('Year')
+```
+
+We can see that sales are highest midway through the year and lowest at the beginning and end of the year. A seasonal plot can give us another view of this,
+
+```{r, cache=TRUE}
+ggseasonplot(plastics) + ggtitle('Monthly Sales of Product A') + ylab('Sales (in Thousands)') + xlab('Year')
+```
+
+Interestingly, we can see that in years 1-4, sales peaked later in the year, while sales peaked earlier in year 5. We can see there is an increasing trend from years 1-5, but in year 5 sales dropped below the levels of years 3-4.
+
+#### b) Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
+
+```{r, cache=TRUE}
+plastics |>
+  decompose(type = 'multiplicative') |>
+  autoplot() + xlab('Year') +
+  ggtitle('Classical multiplicative decomposition of Product A index')
+```
+
+The remainder values below 1 indicate that there is some "leakage" of the trend-cycle component into the remainder component - the trend-cycle estimate has over-smoothed the drop in data.
+
+#### c) Do the results support the graphical interpretation from part a?
+
+Yes, insofar as the trend over time can be observed while identifying the dip at the end of year 5. The seasonality of sales dropping at the beginning/end of each year and peaking during the middle of the year is also supported in part b.
+
+#### d) Compute and plot the seasonally adjusted data
+
+```{r, cache=TRUE}
+fit <- plastics |>
+  decompose(type = 'multiplicative')
+
+autoplot(plastics, series='Data') +
+  autolayer(seasadj(fit), series='Seasonally Adjusted') +
+  xlab('Year') + ylab('Sales (in Thousands)') +
+  ggtitle('Monthly Sales of Product A') +
+  scale_color_manual(values=c('grey','red'),
+                     breaks=c('Data','Seasonally Adjusted'))
+```
+
+#### e) Change one observation to be an outlier (e.g. add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
+
+```{r, cache=TRUE}
+# generate random number
+set.seed(123)
+index <- sample(1:length(plastics), 1)
+# generate copy of data 
+plastics.copy <- plastics
+# add 500 to the random index 
+plastics.copy[index] <- plastics.copy[index] + 500
+
+# recompute seasonally adjusted data 
+fit.copy <- plastics.copy |>
+  decompose(type = 'multiplicative')
+
+autoplot(plastics.copy, series='Data') +
+  autolayer(seasadj(fit.copy), series='Seasonally Adjusted') +
+  xlab('Year') + ylab('Sales (in Thousands)') +
+  ggtitle('Monthly Sales of Product A (with Outlier)') +
+  scale_color_manual(values=c('grey','red'),
+                     breaks=c('Data','Seasonally Adjusted'))
+```
+
+The outlier affects the Seasonally Adjusted data as consistent with its effect to the main data.
+
+#### e) Does it make any difference if the outlier is near the end rather than in the middle of the time series?
+
+```{r, cache=TRUE}
+# set later index
+set.seed(123)
+index.end <- sample(55:60, 1)
+
+# generate copy of data 
+plastics.copy.v2 <- plastics
+# add 500 to the random index 
+plastics.copy.v2[index.end] <- plastics.copy.v2[index.end] + 500
+
+# recompute seasonally adjusted data 
+fit.copy.v2 <- plastics.copy.v2 |>
+  decompose(type = 'multiplicative')
+
+autoplot(plastics.copy.v2, series='Data') +
+  autolayer(seasadj(fit.copy.v2), series='Seasonally Adjusted') +
+  xlab('Year') + ylab('Sales (in Thousands)') +
+  ggtitle('Monthly Sales of Product A (with Outlier)') +
+  scale_color_manual(values=c('grey','red'),
+                     breaks=c('Data','Seasonally Adjusted'))
+```
+
+The outlier seems to have the same effect regardless of whether it appears in the middle or towards the end of the time-series data.
