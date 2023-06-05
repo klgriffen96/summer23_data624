@@ -1,0 +1,292 @@
+---
+title: 'Data 624: Predictive Analytics HW 1, Week 1'
+author: "Kayleah Griffen"
+date: "5/21/2023"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+always_allow_html: true
+---
+
+## Introduction
+
+This homework assignment includes problems from:
+
+(1) Hyndman & Athanasopoulos. "Forecasting: Principles and Practice"
+(2) Kuhn & Johnson. "Applied Predictive Modeling"
+
+This accompanies readings from KJ 1,2 and 3 and HA 1,2,6,7 and 8.
+
+## Homework Solutions
+
+### HA 2.1
+
+Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
+
+Use autoplot() to plot each of these in separate plots.
+
+```{r, warning = FALSE, message=FALSE}
+library(fpp2)
+
+# ?gold
+# "Daily morning gold prices in US dollars. 1 January 1985 – 31 March 1989"
+# 
+# ?woolyrnq
+# "Quarterly production of woollen yarn in Australia: tonnes. Mar 1965 – Sep 1994"
+# 
+# ?gas
+# "Australian monthly gas production: 1956–1995."
+```
+
+What is the frequency of each series? Hint: apply the frequency() function.
+
+```{r}
+frequency(gold)
+tsdisplay(gold)
+
+frequency(woolyrnq)
+tsdisplay(woolyrnq)
+
+frequency(gas)
+tsdisplay(gas)
+
+```
+
+Based on `frequency` and the `tsdisplay` you can tell the `gold` observations are taken daily, the `woolyrnq` is quarterly, and the `gas` is monthly.
+
+
+Use which.max() to spot the outlier in the gold series. Which observation was it?
+
+```{r}
+which.max(gold)
+```
+
+`which.max` determines the index of the maximum of the numberic vector. This occurs at day 770 in the gold series. We can check what date this is using lubridate.
+
+```{r, warning=FALSE, message = FALSE}
+library(lubridate)
+
+ymd("1985/01/01") + 770
+```
+The max price of gold occurred on February 10, 1987.
+
+### HA 2.3
+
+Download some monthly Australian retail data from the book website (https://otexts.com/fpp2/extrafiles/retail.xlsx). These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+
+You can read the data into R with the following script:
+
+```{r}
+library(httr)
+
+github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/hw_1/retail.xlsx"
+temp_file <- tempfile(fileext = ".xlsx")
+req <- GET(github_link, 
+          # write result to disk
+           write_disk(path = temp_file))
+
+retaildata <- readxl::read_excel(temp_file, skip=1)
+```
+
+The second argument (skip=1) is required because the Excel sheet has two header rows.
+
+Select one of the time series as follows (but replace the column name with your own chosen column):
+
+```{r}
+# colnames(retaildata)
+
+# Chose the first column 
+
+myts <- ts(retaildata[,"A3349335T"],
+  frequency=12, start=c(1982,4))
+```
+
+Explore your chosen retail time series using the following functions:
+
+autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf()
+
+First we will use `autoplot`.
+
+```{r}
+autoplot(myts) +
+  ggtitle("Monthly retail sales in various categories for different Australian states") +
+  xlab("Year") +
+  ylab("Retail Sales")
+
+```
+
+Next we can explore the seasonal trends with `ggseasonplot`.
+
+```{r}
+
+ggseasonplot(myts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Retail Sales") +
+  ggtitle("Seasonal plot: Monthly retail sales")
+
+```
+
+We can also use a polar seasonal plot.
+
+```{r}
+
+ggseasonplot(myts, polar = TRUE) +
+  ylab("Retail Sales") +
+  ggtitle("Seasonal plot: Monthly retail sales")
+
+```
+Next we can explore `ggsubseriesplot` which shows the seasonal patterns where the data for each season are collected together.
+
+```{r}
+
+ggsubseriesplot(myts) +
+  ylab("Retail Sales") +
+  ggtitle("Monthly retail sales")
+
+```
+
+Next we can explore `gglagplot` which shows us lagged values of the time series
+
+```{r}
+myts_window <- window(myts, start = c(1982, 4))
+gglagplot(myts_window) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+```
+
+The colors indicate the month of the variable on the vertical axis. The lines connect points in chronological order. The relationship is strongly positive, reflecting the strong seasonality in the data. 
+
+Next with `ggAcf` we can examine the linear relationship between lagged values of a time series.
+
+```{r}
+ggAcf(myts_window)
+
+```
+
+
+According to the book, the dashed blue lines indicate whether the correlations are significantly different from zero and when data are seasonal, the autocorrelations will be larger for the seasonal lags (at multiples of the seasonal frequency) than for other lags.
+
+Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+
+According to the book, "seasonality is always of a fixed and known frequency" and "a cycle occurs when the data exhibit rises and falls that are not of a fixed frequency". The retail sales are constantly increasing and in addition to this there does appear to be seasonality, monthly, where each month peaks or troughs across all of the years. For example for each year December is a high sales month and February is a low sales month.
+
+### HA 6.2
+
+The plastics data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.
+
+(a) Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?
+
+```{r}
+# ?plastics
+# "Monthly sales of product A for a plastics manufacturer."
+
+autoplot(plastics) +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  xlab("Year") +
+  ylab("Sales")
+
+ggseasonplot(plastics, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer")
+
+ggsubseriesplot(plastics) +
+  ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer")
+```
+
+Based on the plots there does appear to be seasonality to the data, the plastic sales are highest May - October (peaking in August usually) and lower November - April (lowest in February).
+
+(b) Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
+
+```{r}
+plastics %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Classical multiplicative decomposition
+    of plasatic sales")
+```
+
+The trend cycle shows a strong seasonal component, with a yearly frequency, and has an increasing trend up until just past year 5 when it begins decreasing. There is some remainder as well.
+
+(c) Do the results support the graphical interpretation from part a?
+
+Yes, the graphical interpretation from part A aligns with the multiplicative decomposition. The yearly seasonal pattern was noted in both a and b. The only part that was not captured well is the drop off in the trend after year 5. 
+
+(d) Compute and plot the seasonally adjusted data.
+
+
+```{r}
+fit <- plastics %>%
+  decompose(type="multiplicative") 
+
+autoplot(plastics, series="Data") +
+  autolayer(trendcycle(fit), series="Trend") +
+  autolayer(seasadj(fit), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+```
+
+(e) Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
+
+```{r}
+
+plastics_outlier_1 <- plastics
+plastics_outlier_1[10] <- plastics[10] + 500
+
+fit <- plastics_outlier_1 %>%
+  decompose(type="multiplicative") 
+
+autoplot(plastics_outlier_1, series="Data") +
+  autolayer(trendcycle(fit), series="Trend") +
+  autolayer(seasadj(fit), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+
+plastics_outlier_1 %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Classical multiplicative decomposition
+    of plasatic sales")
+
+```
+
+The effect of the outlier on the seasonally adjusted data is that there is now a peak at the 10th observation, the spike in the data is not accounted for in the moving average trend due to the moving average smoothing out the outlier so it comes through in the seasonally adjusted. You can see however that even though the data went up by 500, the seasonally adjusted only went up by half of that. You can see that some of the difference that the outlier made went into the remainder.
+
+(f) Does it make any difference if the outlier is near the end rather than in the middle of the time series?
+
+```{r}
+
+plastics_outlier_2 <- plastics
+plastics_outlier_2[60] <- plastics[60] + 500
+
+fit <- plastics_outlier_2 %>%
+  decompose(type="multiplicative") 
+
+autoplot(plastics_outlier_2, series="Data") +
+  autolayer(trendcycle(fit), series="Trend") +
+  autolayer(seasadj(fit), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+plastics_outlier_3 <- plastics
+plastics_outlier_3[30] <- plastics[30] + 500
+
+fit <- plastics_outlier_3 %>%
+  decompose(type="multiplicative") 
+
+autoplot(plastics_outlier_3, series="Data") +
+  autolayer(trendcycle(fit), series="Trend") +
+  autolayer(seasadj(fit), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+```
+
+If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.
