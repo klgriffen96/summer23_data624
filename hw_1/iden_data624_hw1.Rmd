@@ -55,10 +55,9 @@ grid.arrange(p1, p2, p3, nrow=3)
 #### b) What is the frequency of each series? Hint: apply the `frequency()` function.
 
 ```{r}
-string = 'data = %d times per year.\n'
-cat('gold', sprintf(string, frequency(gold)))
-cat('wool', sprintf(string, frequency(woolyrnq)))
-cat('gas', sprintf(string, frequency(gas)))
+sprintf('gold frequency = %d', frequency(gold))
+sprintf('wool frequency = %d', frequency(woolyrnq))
+sprintf('gas frequency = %d', frequency(gas))
 ```
 
 Gold data is yearly, Wool data is quarterly, and Gas data is monthly.
