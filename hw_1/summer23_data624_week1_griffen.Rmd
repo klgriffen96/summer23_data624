@@ -258,35 +258,27 @@ The effect of the outlier on the seasonally adjusted data is that there is now a
 (f) Does it make any difference if the outlier is near the end rather than in the middle of the time series?
 
 ```{r}
+#refactor as function
 
-plastics_outlier_2 <- plastics
-plastics_outlier_2[60] <- plastics[60] + 500
+outlier <- function(n, v){
+  plastics_outlier_2 <- plastics
+  plastics_outlier_2[n] <- plastics[n] + v
 
-fit <- plastics_outlier_2 %>%
-  decompose(type="multiplicative") 
+  fit <- plastics_outlier_2 %>%
+    decompose(type="multiplicative") 
 
-autoplot(plastics_outlier_2, series="Data") +
-  autolayer(trendcycle(fit), series="Trend") +
-  autolayer(seasadj(fit), series="Seasonally Adjusted") +
-  xlab("Year") + ylab("Sales") +
-  ggtitle("Monthly sales of product A for a plastics manufacturer") +
-  scale_colour_manual(values=c("gray","blue","red"),
-             breaks=c("Data","Seasonally Adjusted","Trend"))
+  autoplot(plastics_outlier_2, series="Data") +
+    autolayer(trendcycle(fit), series="Trend") +
+    autolayer(seasadj(fit), series="Seasonally Adjusted") +
+    xlab("Year") + ylab("Sales") +
+    ggtitle("Monthly sales of product A for a plastics manufacturer") +
+    scale_colour_manual(values=c("gray","blue","red"),
+               breaks=c("Data","Seasonally Adjusted","Trend"))
+  
+}
 
-plastics_outlier_3 <- plastics
-plastics_outlier_3[30] <- plastics[30] + 500
-
-fit <- plastics_outlier_3 %>%
-  decompose(type="multiplicative") 
-
-autoplot(plastics_outlier_3, series="Data") +
-  autolayer(trendcycle(fit), series="Trend") +
-  autolayer(seasadj(fit), series="Seasonally Adjusted") +
-  xlab("Year") + ylab("Sales") +
-  ggtitle("Monthly sales of product A for a plastics manufacturer") +
-  scale_colour_manual(values=c("gray","blue","red"),
-             breaks=c("Data","Seasonally Adjusted","Trend"))
-
+outlier(60,500)
+outlier(30, 500)
 ```
 
 If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.
