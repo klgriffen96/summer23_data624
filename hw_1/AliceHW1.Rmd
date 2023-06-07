@@ -13,13 +13,50 @@ library(fpp2)
 ## 2.1
 
 
-```{r 2.1}
+```{r 2.1,eval=FALSE}
+help(gold)
+help("woolyrnq")
+help("gas")
+```
+
+a. Autoplot 'gold' 'woolrnq' and 'gas'
+```{r 2.1a}
+autoplot(gold)
+autoplot(woolyrnq)
+autoplot(gas)
+```
+
+b.What is the frequency of each series?
+```{r 2.1b}
+frequency(gold)
+frequency(woolyrnq)
+frequency(gas)
+```
+
+c. Use which.max() to spot the outlier in the gold series?
+```{r 2.1c}
+which.max(gold)
 ```
 
 ## 2.3
 
+a. Download the file tutel.csv from the book website (read in from GitHub). 
 
-```{r 2.3}
+```{r 2.3a}
+library(readxl)
+tutel <- readxl::read_excel("retail.xlsx", skip=1)
+```
+
+
+b. Convert to timeseries -- drop the first column which contains dates.
+
+```{r 2.3b}
+tutelts <- ts(tutel[,-1], start=1981, frequency=4)
+```
+
+c. Construct timeseries plots of each of the three series
+```{r 2.3c}
+autoplot(tutelts, facets = TRUE)
 ```
 
 ## 6.2
