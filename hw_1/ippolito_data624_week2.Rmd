@@ -1,0 +1,557 @@
+---
+title: "ippolito_data624_hw2"
+author: "Michael Ippolito"
+date: "2023-06-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(PerformanceAnalytics)
+library(corrplot)
+library(mlbench)
+library(e1071)
+library(caret)
+library(ggcorrplot)
+library(fpp2)
+library(mice)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## KJ 3.1 (a)
+
+The UC Irvine Machine Learning Repository contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refrative index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+
+**Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.**
+
+Refractive index (RI) is a numerical variable with a slightly right-skewed distribution and a moderately high correlation (0.81) with the calcium variable (Ca). Sodiam (Na), aluminum (Al), and silicon (Si) exhibit almost no skewness, nor do are they highly correlated with other variables. The distribution for magnesium (Mg) is bathtub-shaped and only exhibits slight correlation with other variables (aluminum, calcium, and barium). Potassium (K), barium (Ba), and iron (Fe) are highly right-skewed but are only slightly correlated with other variables. The RI-Ca correlation is the only one to take particular note of, as it could impact the types of modeling sensitive to those effect (e.g. linear models). Using the heuristic algorithm proposed by K&J (and using the findCorrelation() function), calcium is a candidate for removal due to high correlation. All variables except Type are quantitative; Type is a categorical variable with 6 levels (1, 2, 3, 5, 6, and 7).
+
+```{r warning=FALSE, fig.width=9, fig.height=6}
+
+# Correlation of quantitative vars
+
+# Load data
+data(Glass)
+str(Glass)
+
+# Filter for just quantitative vars
+glassQuant <- Glass %>% select (-Type)
+
+# Corr chart
+chart.Correlation(glassQuant)
+
+# Corr matrix
+corr1 <- cor(glassQuant)
+corr1
+
+# Corr plot
+corrplot(corr1, order='hclust', type='full')
+
+# Find correlations past cutoff
+print(paste0("Candidate for removal due to high correlation: ", findCorrelation(corr1, cutoff=0.8, exact=T, verbose=T, names=T)))
+
+```
+
+## KJ 3.1 (b)
+
+**Do there appear to be any outliers in the data? Are any predictors skewed?**
+
+Based on the histograms from the correlation plot, larger histograms were generated to look for outliers in suspect variables (K, Ca, Ba, and Fe). Outliers were sought based on values that were outside of three standard deviations from the mean. Of the variables examined, two values of potassium seem suspect; other values were outside the three-standard-deviation range, but visually they don't appear to be that unusual.
+
+Some columns exhibited some skewness, although none surpassed 20, which K&J indicate would be highly skewed. Other sources suggest values greater than 1 should be considered highly skewed. If so, the following would be considered as such: RI, Mg, K, Ca, Ba, and Fe.
+
+```{r}
+
+# Look for outliers
+par(mfrow=c(2, 2))
+hist(Glass$K, main='Histogram of K', xlab='K')
+hist(Glass$Ca, main='Histogram of Ca', xlab='Ca')
+hist(Glass$Ba, main='Histogram of Ba', xlab='Ba')
+hist(Glass$Fe, main='Histogram of Fe', xlab='Fe')
+
+# Examine K outliers beyond 3 standard deviations of mean
+print("K outliers beyond 3 standard deviations of mean:")
+Glass[Glass$K > mean(Glass$K) + 3 * sd(Glass$K) | Glass$K < mean(Glass$K) - 3 * sd(Glass$K),]$K
+
+# Examine Ca outliers beyond 3 standard deviations of mean
+print("Ca outliers beyond 3 standard deviations of mean:")
+Glass[Glass$Ca > mean(Glass$Ca) + 3 * sd(Glass$Ca) | Glass$Ca < mean(Glass$Ca) - 3 * sd(Glass$Ca),]$Ca
+
+# Examine Ba outliers beyond 3 standard deviations of mean
+print("Ba outliers beyond 3 standard deviations of mean:")
+Glass[Glass$Ba > mean(Glass$Ba) + 3 * sd(Glass$Ba) | Glass$Ba < mean(Glass$Ba) - 3 * sd(Glass$Ba),]$Ba
+
+# Examine Fe outliers beyond 3 standard deviations of mean
+print("Fe outliers beyond 3 standard deviations of mean:")
+Glass[Glass$Fe > mean(Glass$Fe) + 3 * sd(Glass$Fe) | Glass$Fe < mean(Glass$Fe) - 3 * sd(Glass$Fe),]$Fe
+
+# Look for skewness
+# As a general rule of thumb: If skewness is less than -1 or greater than 1, the distribution is highly skewed.
+# If skewness is between -1 and -0.5 or between 0.5 and 1, the distribution is moderately skewed. 
+# If skewness is between -0.5 and 0.5, the distribution is approximately symmetric.
+print("Skewness of columns:")
+colskewness <- apply(glassQuant, 2, e1071::skewness, type=1)
+colskewness
+
+# Show skewed columns
+print("Skewed columns (skewness < -1 or > 1):")
+skewedcols <- glassQuant[colskewness < -1 | colskewness > 1]
+colnames(skewedcols)
+
+```
+
+## KJ 3.1 (c)
+
+**Are there any relevant transofrmations of one or more predictors that might improve the classification model?**
+
+Six of the predictors can benefit from transformation. The skewness values and histograms of untransformed, log-transformed, and Box-Cox transformed data were compared to evaluate which transformation would be optimal:
+
+1) RI: The refractive index was only slighly skewed, but a Box-Cox transform reduced the value.
+1) Ca: The Box-Cox tranform for calcium produced the best skewness result, although the log histogram seemed visually closer to normal.
+1) Mg, K, Ba, Fe: Box-Cox transformations for magnesium, potassium, barium, and iron were not mathematically possible, but log transformation produced far more normally distributed histograms. Skewness calculations produced NaNs and were therefore not able to be evaluated.
+
+```{r}
+
+# Possible transformations of skewed columns;
+# look at log histograms first
+par(mfrow=c(2, 3))
+hist(log(Glass$RI), main='Log Transform of RI', xlab='Ri')
+hist(log(Glass$Mg), main='Log Transform of Mg', xlab='Mg')
+hist(log(Glass$K), main='Log Transform of K', xlab='K')
+hist(log(Glass$Ca), main='Log Transform of Ca', xlab='Ca')
+hist(log(Glass$Ba), main='Log Transform of Ba', xlab='Ba')
+hist(log(Glass$Fe), main='Log Transform of Fe', xlab='Fe')
+
+# Box-Cox transformation - single var
+bctrans <- BoxCoxTrans(Glass$Ca)
+bccol <- predict(bctrans, Glass$Ca)
+skewness(bccol)
+
+# Box-Cox transformation - use "preProcess" to transform multiple cols
+bctrans <- preProcess(skewedcols, method=c('BoxCox'))
+bccols <- predict(bctrans, skewedcols)
+bctrans$bc
+
+# Show histograms of Box-Cox-transformed columns
+par(mfrow=c(2, 3))
+hist(bccols$RI, main='Box-Cox Transform of RI', xlab='RI')
+hist(bccols$Ca, main='Box-Cox Transform of Ca', xlab='Ca')
+
+# Compare transforms
+par(mfrow=c(2,3))
+hist(Glass$RI, main='RI (Untransformed)', xlab='RI')
+hist(log(Glass$RI), main='RI (Log Transformation)', xlab='RI')
+hist(bccols$RI, main='RI (Box-Cox Transformation)', xlab='RI')
+hist(Glass$Mg, main='Mg (Untransformed)', xlab='Mg')
+hist(log(Glass$Mg), main='Mg (Log Transformation)', xlab='Mg')
+plot.new()
+par(mfrow=c(2,3))
+hist(Glass$K, main='K (Untransformed)', xlab='K')
+hist(log(Glass$K), main='K (Log Transformation)', xlab='K')
+plot.new()
+hist(Glass$Ca, main='Ca (Untransformed)', xlab='Ca')
+hist(log(Glass$Ca), main='Ca (Log Transformation)', xlab='Ca')
+hist(bccols$Ca, main='Ca (Box-Cox Transformation)', xlab='Ca')
+par(mfrow=c(2,3))
+hist(Glass$Ba, main='Ba (Untransformed)', xlab='Ba')
+hist(log(Glass$Ba), main='Ba (Log Transformation)', xlab='Ba')
+plot.new()
+hist(Glass$Fe, main='Fe (Untransformed)', xlab='Fe')
+hist(log(Glass$Fe), main='Fe (Log Transformation)', xlab='Fe')
+plot.new()
+
+# Check skewness
+tmpdf <- as.data.frame(list(Non.Transformed.RI=Glass$RI, Log.RI=log(Glass$RI), Box.Cox.RI=bccols$RI))
+apply(tmpdf, 2, e1071::skewness, type=1)
+tmpdf <- as.data.frame(list(Non.Transformed.Mg=Glass$Mg, Log.Mg=log(Glass$Mg), Box.Cox.Mg=bccols$Mg))
+apply(tmpdf, 2, e1071::skewness, type=1)
+tmpdf <- as.data.frame(list(Non.Transformed.K=Glass$K, Log.K=log(Glass$K), Box.Cox.K=bccols$K))
+apply(tmpdf, 2, e1071::skewness, type=1)
+tmpdf <- as.data.frame(list(Non.Transformed.Ca=Glass$Ca, Log.Ca=log(Glass$Ca), Box.Cox.Ca=bccols$Ca))
+apply(tmpdf, 2, e1071::skewness, type=1)
+tmpdf <- as.data.frame(list(Non.Transformed.Ba=Glass$Ba, Log.Ba=log(Glass$Ba), Box.Cox.Ba=bccols$Ba))
+apply(tmpdf, 2, e1071::skewness, type=1)
+tmpdf <- as.data.frame(list(Non.Transformed.Fe=Glass$Fe, Log.Fe=log(Glass$Fe), Box.Cox.Fe=bccols$Fe))
+apply(tmpdf, 2, e1071::skewness, type=1)
+
+```
+
+## KJ 3.2 (a)
+
+The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+**Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?**
+
+Using the nearZeroVar() function, these variables appear to be degenerate as described in K&J as having near-zero variance:
+
+* leaf.mild
+* mycelium
+* sclerotia
+
+As shown in the summary output, each of these columns has a dominant class that far exceeds its next most populous class.
+
+```{r}
+
+# Load data
+data(Soybean)
+str(Soybean)
+
+# Generate frequency tables to look for degenerate distributions
+multifunc2 <- function(x) {
+    return(prop.table(table(x)))
+}
+#apply(Soybean, 2, table)  # freq table - produces long output; use nzv instead
+#apply(Soybean, 2, multifunc2)  # proportion table - produces long output; use nzv instead
+
+# Degenerate vars: if both of these are true:
+# 1. fraction of unique vals over the sample size < 10%
+# 2. ratio of freq of the most prevalent to the freq of the second most prevalent is > 20
+nzv <- nearZeroVar(Soybean)
+print(colnames(Soybean[,nzv]))
+
+# Examine NZV columns
+summary(Soybean[,nzv])
+
+```
+
+## KJ 3.2 (b)
+
+**Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?**
+
+As shown in the md.pattern plot below, there are 562 (of 683) complete cases, or roughly 82% of the data. Of the 18% of the data that have over 15% missing values, most of the variables are related to plant pathology:
+
+* hail
+* sever
+* seed.tmt
+* germ
+* leaf.mild
+* lodging
+* fruiting.bodies
+* fruit.spots
+* seed.discolor
+
+We verified that the missing values weren't due to the absence of the specific pathology, as negative cases were also reported. So the values do appear to be missing as opposed to being intentionally or structurally absent.
+
+```{r fig.width=9, fig.height=6}
+
+# Look for missing values
+summary(Soybean)
+
+# Select columns where % of missing values > 15%
+over15missing <- (colMeans(is.na(Soybean)) * 100) > 15
+print("Vars with over 15% of data missing:")
+colMeans(is.na(Soybean[,over15missing])) * 100
+
+# Generate plots of soybean class vs variables with missing values > 15%
+par(mfrow=c(3,4))
+for (i in seq(1, length(over15missing))) {
+    if (over15missing[i] == T) {
+        plot(x=Soybean[,i], xlab=colnames(Soybean[i]))
+    }
+}
+mtext("Soybean class vs variables with proportion of missing values > 15%", outer=T, line=-2)
+
+```
+
+```{r fig.width=11, fig.height=8, warning=F}
+
+# Generate ggcorrplot correlating missing values and soybean class:
+# Make a new vector containing column names of variables with missing values > 15%;
+# also include the outcome variable, soybean class.
+class_and_over15 <- over15missing  
+class_and_over15[1] <- T
+
+# Convert to a model matrix, then generate correlations and the correlation plot
+model.matrix(~.+0, data=Soybean[,class_and_over15]) %>%
+  cor(use="pairwise.complete.obs") %>%
+  ggcorrplot(show.diag=FALSE, type="lower", lab=TRUE, lab_size=2)
+
+```
+
+```{r fig.width=11, fig.height=8}
+
+# Generate missing data pattern plot; blue=observed, red=missing.
+# Row labels at left give the number of times that pattern occurs.
+# Row labels at right give the number of columns with missing values (i.e., the number of red cells).
+# Totals along the bottom are the number of missing values in each variable.
+md.pattern(Soybean, rotate.names=T, plot=T)
+
+```
+
+## KJ 3.2 (c)
+
+**Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
+
+As shown in the md.pattern plot above, there are several patterns that are of immediate concern due to the fact that over half of the variables are missing; these observations are candidates for removal:
+
+* one observation has 30 variables missing
+* 15 observations have 28 variables missing
+* 14 observations have 24 variables missing
+* 8 observations have 20 variables missing
+* 55 observations have 19 variables missing
+
+Using this strategy, 86.4% of the original observations are retained, leaving 4.7% of the remaining rows having at least one missing value.
+
+```{r}
+
+# Create copy of the original data set
+sb2 <- Soybean
+
+# Remove the observations in which 19 or more variables have missing values
+most_complete <- rowSums(is.na(sb2)) < 19
+sb2 <- sb2[most_complete,]
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb2)) > 0
+print(paste0("Proportion of observations with missing values after removing those with high proportion of missing variables: ", 
+    round(nrow(sb2[some_missing,]) / nrow(sb2), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb2) / nrow(Soybean), 3)))
+
+```
+
+An alternative approach would be to remove the three variables with degenerate classes:
+
+* leaf.mild
+* mycelium
+* sclerotia
+
+and to additionally remove those with a high proportion of data:
+
+* hail
+* sever
+* seed.tmt
+* germ
+* leaf.mild (also degenerate)
+* lodging
+* fruiting.bodies
+* fruit.spots
+* seed.discolor
+
+However, that still leaves 17.7% of observations with at least one missing value. So a combination of removing some observations along with the above variables would be more effective. The disadvantage of this is that 11 variables would be removed--a full 30% of all variables.
+
+```{r}
+
+# Create copy of original data set
+sb3 <- Soybean
+
+# Remove the observations in which 24 or more variables have missing values
+most_complete <- rowSums(is.na(sb3)) < 24
+sb3 <- sb3[most_complete,]
+
+# Remove variables with degenerate classes or having high proportion of missing values (11 all together)
+sb3 <- sb3 %>%
+    select(-leaf.mild, -mycelium, -sclerotia, -hail, -sever, -seed.tmt, -germ, -lodging, -fruiting.bodies, -fruit.spots, -seed.discolor)
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb3)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb3[some_missing,]) / nrow(sb3), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb3) / nrow(Soybean), 3)))
+
+```
+
+Another approach would be to impute the missing data. The MICE package (multivariate imputation by chained equations) is an appropriate way to do this. Even using MICE, the observations with over 24 variables missing would seem to remain problematic, so we'll remove those first before imputing. As shown below, we now have a dataset with no missing cases, and over 95% of the original observations were retained.
+
+```{r warning=FALSE}
+
+# Create copy of original data set
+sb4 <- Soybean
+
+# Remove the observations in which 24 or more variables have missing values
+most_complete <- rowSums(is.na(sb4)) < 24
+sb4 <- sb4[most_complete,]
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb4)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb4[some_missing,]) / nrow(sb4), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb4) / nrow(Soybean), 3)))
+
+# Impute missing data
+imp <- mice(sb4, maxit=5, m=5, seed=777)
+
+# Complete the data set using imputed values
+sb4 <- complete(imp)
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb4)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb4[some_missing,]) / nrow(sb4), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb4) / nrow(Soybean), 3)))
+
+```
+
+
+## HA 7.1 (a)
+
+Consider the pigs series — the number of pigs slaughtered in Victoria each month.
+
+**Use the ses() function in R to find the optimal values of α and ℓ_0, and generate forecasts for the next four months.**
+
+Using SES, 98816.41 pigs are forecast to be slaughtered during each of the four months following August 1995. The initial state, ℓ_0, was estimated to be 77260.0561, with an α of 0.2971. The low value of α indicates that relatively more weight is given to values in the more distant past than if the α value had been closer to 1. The 80 and 95 % prediction intervals were large, indicating that the predictions aren't uncertain.
+
+```{r}
+
+# Load data
+data(pigs)
+
+# Plot
+pigs %>% autoplot()
+
+# Forecast next 4 months using SES
+fit <- ses(pigs, h=4)
+summary(fit)
+
+# Plot fitted values
+autoplot(fit) +
+  autolayer(fitted(fit), series="Fitted") +
+  ylab("Pigs slaughtered") + xlab("Year")
+
+```
+
+## HA 7.1 (b)
+
+**Compute a 95% prediction interval for the first forecast using $\hat{y}$±1.96s where s is the standard deviation of the residuals. Compare your interval with the interval produced by R.**
+
+The prediction interval calculated using $\hat{y}$±1.96s yields:
+
+98816.41 ± 20136.4388581745 = (78679.97, 118952.84)
+
+This is close, but different from the intervals calculated by the model. The reason for this is that the model takes into account the values of α and h as shown on table 7.8, yielding more uncertainty as h gets larger. I.e., the further into the future the forecast, the more uncertain the prediction and, therefore, the larger the prediction interval.
+
+```{r}
+
+# Calculate standard deviaion of the residuals from previous ses fit
+sd_res <- sd(fit$residuals)
+
+# Calculate margin of error for 95% prediction interval
+me <- sd_res * 1.96
+
+# Calculate lo and hi 95
+lo_95 <- fit$mean[1] - me
+hi_95 <- fit$mean[1] + me
+print(paste0("Prediction interval: ", round(fit$mean[1], 2), " ± ", me, " = (", round(lo_95, 2), ", ", round(hi_95, 2), ")"))
+print("Compare to interval predicted by SES fit:")
+for (i in seq(1, 4)) {
+    print(paste0("    ", round(fit$mean[i], 2), " ± ", me, 
+        " = (", round(fit$lower[i, 2], 2), ", ", round(fit$upper[i, 2], 2), ")"))
+}
+
+```
+
+## HA 7.2
+
+**Write your own function to implement simple exponential smoothing. The function should take arguments y (the time series), alpha (the smoothing parameter α) and level (the initial level ℓ_0). It should return the forecast of the next observation in the series. Does it give the same forecast as ses()?**
+
+Use weighted average form of the SES equation:
+
+$\hat{y}_{{T + 1}|T}\ =\ \sum_{j=0}^{T-1} \alpha(1\ -\ \alpha)^j\ y_{T-j}\ +\ (1\ -\ \alpha)^Tℓ_0$
+
+Using the values produced by the ses() function for α and ℓ_0, the custom function does return the same value as the ses() function: 98816 (rounded) in both cases. It is noted that various values of ℓ_0 were tried, and they produced the same result. However, when alpha was varied, different results were returned, indicating that the outcome is heavily dependent on which value of alpha is chosen.
+
+```{r}
+
+# Function to implement SES
+my_ses <- function(y, alpha, level) {
+    
+    # Initialize vector to store forecast values
+    fitted <- c()
+    
+    # Set T to be length of time series
+    T <- length(y)
+    
+    # Iterate over terms
+    for (j in seq(1, T)) {
+        if (j == 1) {
+            fitted[j] <- level
+        } else {
+            fitted[j] <- alpha * (y[j - 1]) + (1 - alpha) * fitted[j - 1]
+        }
+    }
+    
+    # Find the next fitted value in the series
+    fitted[T + 1] <- alpha * (y[T]) + (1 - alpha) * fitted[T]
+    
+    # Return fitted values
+    return(fitted[T + 1])
+
+}
+
+# Calculate SES using custom function
+my_ses(pigs, 0.2971, 77260.0561)
+
+```
+
+## HA 7.3
+
+**Modify your function from the previous exercise to return the sum of squared errors rather than the forecast of the next observation. Then use the optim() function to find the optimal values of α and ℓ_0. Do you get the same values as the ses() function?**
+
+The optim() function using the default method (Nelder and Mead) produced different values for α and ℓ_0 (0.5179980 and 0.1307012, respectively). Changing the method to BFGS (Broyden, Fletcher, Goldfarb and Shanno) made the results very close to the one produced by the ses() function (0.297142 and 77273.160331, respectively).
+
+```{r}
+
+# Function to implement SES, modified to return the sum of squared errors instead of the forecast of the next observation
+my_ses_mod <- function(y, params) {
+
+    # Split out parameters for optim() function    
+    alpha <- params[1]
+    level <- params[2]
+    
+    # Initialize vector to store forecast values
+    fitted <- c()
+    
+    # Set T to be length of time series
+    T <- length(y)
+    
+    # Iterate over terms
+    for (j in seq(1, T)) {
+        if (j == 1) {
+            fitted[j] <- level
+        } else {
+            fitted[j] <- alpha * (y[j - 1]) + (1 - alpha) * fitted[j - 1]
+        }
+    }
+    
+    # Convert fitted values to time series
+    fitted <- ts(fitted, frequency=12, start=c(1980, 1))
+    
+    # Calculate residuals
+    residuals <- y - fitted
+    
+    # Calculate sum of squared errors
+    sse=sum(residuals ** 2)
+
+    # Return fitted values, residuals, and sum of squared errors
+    # return(list(fitted=fitted, residuals=residuals, sse=sse))
+    
+    # Return sse
+    return(sse)
+
+}
+
+# Calculate SSE using modified custom function
+fit2 <- my_ses_mod(pigs, c(0.2971, 77260.0561))
+
+# Compare this SSE to SSE from original fit using sse()
+fit2
+sum(fit$residuals ** 2)
+
+# Optimize α and ℓ_0 using optim() function
+fit3 <- optim(par=c(0, 0), fn=my_ses_mod, y=pigs)
+fit3  # produces alpha=0.5179980, l_0=0.1307012
+
+# Try optimize again using method='BFGS'
+fit4 <- optim(par=c(0, 0), fn=my_ses_mod, y=pigs, method='BFGS')
+fit4
+
+```
+
