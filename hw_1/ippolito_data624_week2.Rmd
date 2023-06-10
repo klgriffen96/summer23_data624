@@ -2,7 +2,15 @@
 title: "ippolito_data624_hw2"
 author: "Michael Ippolito"
 date: "2023-06-04"
-output: html_document
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}

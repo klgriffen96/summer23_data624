@@ -2,7 +2,15 @@
 title: "ippolito_data624_week1"
 author: "Michael Ippolito"
 date: "2023-05-31"
-output: html_document
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -11,6 +19,7 @@ knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
 library(tidyverse)
 library(fpp2)
 library(seasonal)
+library(httr)
 
 ```
 
@@ -73,7 +82,8 @@ print(paste0("Max value in gold data is ", gold[which.max(gold)]))
 ```{r}
 
 # Load data
-retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+GET('https://github.com/klgriffen96/summer23_data624/raw/main/hw_1/retail.xlsx', write_disk(tmpfile <- tempfile(fileext=".xlsx")))
+retaildata <- readxl::read_excel(tmpfile, skip=1)
 
 ```
 
