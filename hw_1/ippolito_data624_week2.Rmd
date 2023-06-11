@@ -1,5 +1,5 @@
 ---
-title: "ippolito_data624_hw2"
+title: "ippolito_data624_week2"
 author: "Michael Ippolito"
 date: "2023-06-04"
 output:
