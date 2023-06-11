@@ -31,7 +31,9 @@ theme_set(theme_minimal())
 
 ```
 
-## KJ 3.1 (a)
+## KJ 3.1
+
+### KJ 3.1 (a)
 
 The UC Irvine Machine Learning Repository contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refrative index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
 
@@ -65,7 +67,7 @@ print(paste0("Candidate for removal due to high correlation: ", findCorrelation(
 
 ```
 
-## KJ 3.1 (b)
+### KJ 3.1 (b)
 
 **Do there appear to be any outliers in the data? Are any predictors skewed?**
 
@@ -113,7 +115,7 @@ colnames(skewedcols)
 
 ```
 
-## KJ 3.1 (c)
+### KJ 3.1 (c)
 
 **Are there any relevant transofrmations of one or more predictors that might improve the classification model?**
 
@@ -189,7 +191,9 @@ apply(tmpdf, 2, e1071::skewness, type=1)
 
 ```
 
-## KJ 3.2 (a)
+## KJ 3.2
+
+### KJ 3.2 (a)
 
 The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
 
@@ -227,7 +231,7 @@ summary(Soybean[,nzv])
 
 ```
 
-## KJ 3.2 (b)
+### KJ 3.2 (b)
 
 **Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?**
 
@@ -291,7 +295,7 @@ md.pattern(Soybean, rotate.names=T, plot=T)
 
 ```
 
-## KJ 3.2 (c)
+### KJ 3.2 (c)
 
 **Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
 
@@ -398,14 +402,15 @@ print(paste0("Proportion of observations retained from original data set: ",
 
 ```
 
+## HA 7.1
 
-## HA 7.1 (a)
+### HA 7.1 (a)
 
 Consider the pigs series — the number of pigs slaughtered in Victoria each month.
 
-**Use the ses() function in R to find the optimal values of α and ℓ_0, and generate forecasts for the next four months.**
+**Use the ses() function in R to find the optimal values of α and $ℓ_0$, and generate forecasts for the next four months.**
 
-Using SES, 98816.41 pigs are forecast to be slaughtered during each of the four months following August 1995. The initial state, ℓ_0, was estimated to be 77260.0561, with an α of 0.2971. The low value of α indicates that relatively more weight is given to values in the more distant past than if the α value had been closer to 1. The 80 and 95 % prediction intervals were large, indicating that the predictions aren't uncertain.
+Using SES, 98816.41 pigs are forecast to be slaughtered during each of the four months following August 1995. The initial state, $ℓ_0$, was estimated to be 77260.0561, with an α of 0.2971. The low value of α indicates that relatively more weight is given to values in the more distant past than if the α value had been closer to 1. The 80 and 95 % prediction intervals were large, indicating that the predictions aren't uncertain.
 
 ```{r}
 
@@ -426,7 +431,7 @@ autoplot(fit) +
 
 ```
 
-## HA 7.1 (b)
+### HA 7.1 (b)
 
 **Compute a 95% prediction interval for the first forecast using $\hat{y}$±1.96s where s is the standard deviation of the residuals. Compare your interval with the interval produced by R.**
 
@@ -456,15 +461,15 @@ for (i in seq(1, 4)) {
 
 ```
 
-## HA 7.2
+### HA 7.2
 
-**Write your own function to implement simple exponential smoothing. The function should take arguments y (the time series), alpha (the smoothing parameter α) and level (the initial level ℓ_0). It should return the forecast of the next observation in the series. Does it give the same forecast as ses()?**
+**Write your own function to implement simple exponential smoothing. The function should take arguments y (the time series), alpha (the smoothing parameter α) and level (the initial level $ℓ_0$). It should return the forecast of the next observation in the series. Does it give the same forecast as ses()?**
 
 Use weighted average form of the SES equation:
 
 $\hat{y}_{{T + 1}|T}\ =\ \sum_{j=0}^{T-1} \alpha(1\ -\ \alpha)^j\ y_{T-j}\ +\ (1\ -\ \alpha)^Tℓ_0$
 
-Using the values produced by the ses() function for α and ℓ_0, the custom function does return the same value as the ses() function: 98816 (rounded) in both cases. It is noted that various values of ℓ_0 were tried, and they produced the same result. However, when alpha was varied, different results were returned, indicating that the outcome is heavily dependent on which value of alpha is chosen.
+Using the values produced by the ses() function for α and $ℓ_0$, the custom function does return the same value as the ses() function: 98816 (rounded) in both cases. It is noted that various values of $ℓ_0$ were tried, and they produced the same result. However, when alpha was varied, different results were returned, indicating that the outcome is heavily dependent on which value of alpha is chosen.
 
 ```{r}
 
@@ -499,11 +504,11 @@ my_ses(pigs, 0.2971, 77260.0561)
 
 ```
 
-## HA 7.3
+### HA 7.3
 
 **Modify your function from the previous exercise to return the sum of squared errors rather than the forecast of the next observation. Then use the optim() function to find the optimal values of α and ℓ_0. Do you get the same values as the ses() function?**
 
-The optim() function using the default method (Nelder and Mead) produced different values for α and ℓ_0 (0.5179980 and 0.1307012, respectively). Changing the method to BFGS (Broyden, Fletcher, Goldfarb and Shanno) made the results very close to the one produced by the ses() function (0.297142 and 77273.160331, respectively).
+The optim() function using the default method (Nelder and Mead) produced different values for α and $ℓ_0$ (0.5179980 and 0.1307012, respectively). Changing the method to BFGS (Broyden, Fletcher, Goldfarb and Shanno) made the results very close to the one produced by the ses() function (0.297142 and 77273.160331, respectively).
 
 ```{r}
 
