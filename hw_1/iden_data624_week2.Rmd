@@ -1,0 +1,274 @@
+---
+title: "DATA 624 HW2"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(corrplot)
+library(e1071)
+library(caret)
+library(gridExtra)
+library(fpp2)
+```
+
+# KJ 3.1
+
+#### The UC Irvine Machine Learning Repository contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refractive index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+
+#### The data can be accessed via:
+
+```{r}
+library(mlbench)
+data(Glass)
+str(Glass)
+```
+
+#### a) Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
+
+First we'll take a look at histograms of the predictors:
+
+```{r histograms, cache=TRUE}
+# subset the data
+data.sub = Glass[,1:9] 
+
+# plot histograms of the subset data
+par(mfrow = c(3,3), mar = c(2, 2, 2, 2))
+for (col in colnames(data.sub)) {
+  hist(data.sub[, col], main=col)
+}
+```
+
+None of the predictors are normally distributed. Let's take a look at relationships between the predictors.
+
+```{r pairs-plot, cache=TRUE}
+par(mar = c(1,1,1,1))
+pairs(data.sub)
+```
+
+There appears to be a linear relationship between `RI` and `Ca`, but otherwise nothing jumps out. Let's take a look at correlation matrix.
+
+```{r}
+# store correlation matrix
+corrplot(cor(data.sub), order = "hclust") 
+```
+
+There is some collinearity between `RI` and `Ca`. There is some correlation between a few of the other variables: `RI` and `Si`, `Mg` and `AI`, and `Ba` and `AI`.
+
+#### b) Do there appear to be any outliers in the data? Are any predictors skewed?
+
+As we observed from the histograms, all of the predictors are skewed to some degree, but the worst offenders are `Mg`, which appears to be bimodal, and `K`, `Ba`, and `Fe`, which appear to be right-skewed. We can confirm this by using the `skewness` function:
+
+```{r}
+skewValues = apply(data.sub, 2, skewness)
+skewValues
+```
+
+As far as outliers, let's take a look at some boxplots,
+
+```{r boxplot, cache=TRUE}
+data.sub |>
+  pivot_longer(cols=all_of(c(1:9)),
+               names_to = "name",
+               values_to = "value") |>
+  ggplot(aes(value)) +
+  geom_boxplot() +
+  facet_wrap(~name, scales = "free")
+```
+
+There are a lot of outliers present in each predictor with the exception of `Mg`.
+
+#### c) Are there any relevant transformations of one or more predictors that might improve the classification model?
+
+A Box-Cox transformation, centering and scaling the predictors, and extracting principal components might improve the classificiation model.
+
+```{r}
+trans <- preProcess(data.sub, 
+                    method = c("BoxCox", "center", "scale", "pca"))
+trans
+```
+
+Apply the transformations:
+
+```{r}
+transformed = predict(trans, data.sub)
+head(transformed[, 1:5])
+```
+
+Additionally, as most of the predictor variables are right-skewed, a log or square root transformation may make the distribution more symmetrical and reduce the effect of extreme variables.
+
+# KJ 3.2
+
+#### The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+#### The data can be loaded via:
+
+```{r}
+data(Soybean) # from mlbench library
+head(Soybean)
+```
+
+#### a) Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?
+
+```{r barplots, fig.height=15, cache=TRUE}
+par(mfrow = c(9,4), mar = c(2,2,2,2))
+for (col in colnames(Soybean)) {
+  freq = table(Soybean[,col])
+  barplot(freq, main = col, xlab = "", ylab = "")
+}
+```
+
+We can see that a lot of the variables are degenerate, including:
+
+`leaves` `leaf.malf` `leaf.mild` `lodging` `mycelium`\
+`scelrotia`\
+`seed.size`\
+`shriveling`
+
+#### b) Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?
+
+```{r}
+col_sums = colSums(is.na(Soybean))
+
+data.frame(variable = names(col_sums), missing = col_sums, row.names = NULL) |> 
+  ggplot(aes(y=reorder(variable,missing), x=missing)) +
+  geom_col() +
+  ggtitle('missing values') + xlab('') + ylab('')
+```
+
+We see a bunch of predictors with more than 80 NAs, related to seed (`seed.tmt`,`seed.size`,`seed.discolor`,`seed`), leaf information (`leaf.size`,`leaf.shread`,`leaf.mild`,`leaf.marg`,`leaf.malf`,`leaf.halo`), fruit (`fruiting.bodies`,`fruit.spots`,`fruit.pods`), and a few others that are not of a clear category (`shriveling`,`sever`,`mold.growth`,`lodging`,`hail`,`germ`).
+
+Checking to see how these NAs relate by class:
+
+```{r}
+Soybean |>
+  group_by(class = Class) |>
+  summarize(total_na = sum(is.na(across(-Class))),
+            pct_na=sum(is.na(across(-Class)))
+            / n()) |>
+  arrange(desc(pct_na))
+```
+
+We see that five of the 19 classes are responsible for all of the NAs. This indicates to me a likelihood that certain measurements are either applicable or not available to these classes. This should be taken into consideration when considering how to deal with these missing values.
+
+#### c) Develop a strategy for handling missing data, either by eliminating predictors or imputation.
+
+The degenerate values should be removed as they offer no predictive value.
+
+Because NA values only appear in 5 of the 14 classes, missingness is potentially informative in predicting a class. Two ways to deal with this while retaining the predictive value of the missingness is to **1)** create an **indicator variable** that represents the presence or absence of missing values in a specific variable, or **2)** create a **missingness pattern variable** that indicates whether a specific combination of variables is missing or not.
+
+It's also possible to apply pattern-based imputation using the `mice` or `amelia` packages in R.
+
+# HA 7.1
+
+#### Consider the `pigs` series -- the number of pigs slaughtered in Victoria each month.
+
+#### a) Use the `ses()` function in R to find the optimal values of 
+$α$ and $l_0$
+
+###, and generate forecasts for the next four months.
+
+```{r}
+data(pigs)
+fc <- ses(pigs, h=4)
+fc$model
+```
+
+```{r}
+a = fc$model$par[1] #alpha
+l = fc$model$par[2] # l0
+
+cat(sprintf("Alpha: %f\nl0: %f", a, l))
+```
+
+
+```{r}
+autoplot(pigs) + 
+  autolayer(fc) + 
+  ggtitle('Forecast from Simple Exponential Smoothing') +
+  xlab('Year') + ylab('Pigs Slaughtered')
+```
+
+The forecasts can be accessed by calling the `summary` function on the `fc` object, or by accessing the `mean` attribute of the `fc` object, 
+
+```{r}
+summary(fc)
+```
+```{r}
+fc$mean
+```
+
+
+#### b) Compute a 95% prediction interval for the first forecast using the
+
+$\hat{y} \verb|+=| 1.96s$. 
+
+#### where *s* is the standard deviation of the residuals. Compare your interval with the interval produced by R. 
+
+```{r}
+s = sd(residuals(fc)) # standard deviation of residuals 
+first.fc = fc$mean[1] # first forecast
+ci.95 = c(Lower = first.fc - 1.96*s, Upper = first.fc + 1.96*s)
+ci.95
+```
+
+# HA 7.2 
+
+#### Write your own function to implement simple exponential smoothing. 
+
+**The function should take arguments `y` (the time series), `alpha` (the smoothing parameter $α$) and `level` (the initial level) $l_0$. It should return the forecast of the next observation in the series. Does it give the same forecast as `ses()`**
+
+```{r}
+simple_exponential_smoothing = function(y, alpha, level) {
+
+  for (i in 1:length(y)) {
+    level = alpha * y[i] + (1 - alpha) * level
+  }
+  
+  return(level[[1]])
+}
+
+first.fc == simple_exponential_smoothing(pigs, alpha = a, level = l)
+```
+
+# HA 7.3 
+
+#### Modify your function from the previous exercise to return the sum of squared errors rather than the forecast of the next observation. Then use the `optim()` function to find the optimal values of
+
+**$α$ and $l_0$**
+
+**Does it give the same forecast as `ses()`?**
+
+```{r}
+# optim requires a vector as first argument
+sum_squared_errors = function(pars = c(alpha, level), y) {
+  alpha = pars[1]
+  level = pars[2]
+  sse = 0 # initialize sum of squared errors
+  for (i in 1:length(y)) {
+    error = y[i] - level # calculate the error
+    sse = sse + error^2 # sum the squared error
+    level = alpha * y[i] + (1 - alpha) * level # update the level
+  }
+  
+  return(sse[[1]])
+}
+
+sse.pars = optim(par = c(0, pigs[1]), y = pigs, fn = sum_squared_errors)$par
+
+simple.exponential.smoothing = c(alpha = a[[1]], l0 = l[[1]])
+sum.squared.errors = c(alpha = sse.pars[1], l0 = sse.pars[2])
+rbind(simple.exponential.smoothing, sum.squared.errors)
+```
+
+The forecasts are nearly the same, we can see that $l_0$ for simple exponential smoothing is slightly lower than for sum of squared errors.
+

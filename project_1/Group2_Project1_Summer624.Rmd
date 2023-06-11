@@ -1,0 +1,59 @@
+---
+title: 'Data 624: Project 1'
+author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
+date: "6/11/2023"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+always_allow_html: true
+---
+
+## Introduction 
+
+This report is intended for colleagues from a variety of backgrounds and contains both technical and non-technical explanations of the work conducted. The objective of this project was to perform the appropriate analysis in order to forecast two variables (of five provided) each from six different time series sets. We were provided a spreadsheet that contains 1622 periods of every variable in every set and were expected to forecast 140 periods. The sets are labeled S01, S02, S03, S04, S05 and S06 and each contains variables labeled V01, V02, V03, V05, and V07. Different variables are required to be forecast depending on the set, specified below:
+
+S01 – Forecast  Var01, Var02
+S02 – Forecast  Var02, Var03
+S03 – Forecast  Var05, Var07
+S04 – Forecast  Var01, Var02
+S05 – Forecast  Var02, Var03
+S06 – Forecast  Var05, Var07
+
+## Data Preparation
+
+The data was provided as an excel (.xls) file. The columns provided were the series index, the category, and then a column for each variable. To conduct the data analysis and forecasting the open source software `r` was used. In order to begin processing the data, the data was read into `r` from github (where the provided data file was stored) and stored in a format in `r` called a dataframe. Below is a preview of the data to get an idea of the format.
+
+```{r, warning=FALSE, echo = FALSE}
+library(httr)
+library(kableExtra)
+
+github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/project_1/Data%20Set%20for%20Class.xls"
+temp_file <- tempfile(fileext = ".xls")
+req <- GET(github_link, 
+          # write result to disk
+           write_disk(path = temp_file))
+
+df <- readxl::read_excel(temp_file)
+
+head(df, 10) |>
+  kbl(caption = "Series Provided") |>
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+
+Rather than have all of the data saved in the same dataframe object, called `df`, each separate series was split out into its own dataframe for processing. The split out dataframes were labeled, s01, s02, s03, s04, s05 and s06 and have all of the same columns as the original `df` dataframe. An example of s01 is below. 
+
+```{r, warning=FALSE, message = FALSE, echo = FALSE}
+library(tidyverse)
+s01 <- df |> filter(category == "S01")
+s02 <- df |> filter(category == "S02")
+s03 <- df |> filter(category == "S03")
+s04 <- df |> filter(category == "S04")
+s05 <- df |> filter(category == "S05")
+s06 <- df |> filter(category == "S06")
+
+head(s01, 5) |>
+  kbl(caption = "s01") |>
+  kable_classic(full_width = F, html_font = "Cambria")
+```

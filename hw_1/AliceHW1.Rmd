@@ -1,0 +1,107 @@
+---
+title: "HW Week 1"
+author: "Alice Friedman"
+date: "2023-06-07"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(fpp2)
+```
+
+## 2.1
+
+
+```{r 2.1,eval=FALSE}
+help(gold)
+help("woolyrnq")
+help("gas")
+```
+
+a. Autoplot 'gold' 'woolrnq' and 'gas'
+```{r 2.1a}
+autoplot(gold)
+autoplot(woolyrnq)
+autoplot(gas)
+```
+
+b.What is the frequency of each series?
+```{r 2.1b}
+frequency(gold)
+frequency(woolyrnq)
+frequency(gas)
+```
+
+c. Use which.max() to spot the outlier in the gold series?
+```{r 2.1c}
+which.max(gold)
+```
+
+## 2.3
+
+a. Download the file tutel.csv from the book website (read in from GitHub). 
+
+```{r 2.3a}
+library(readxl)
+tutel <- readxl::read_excel("retail.xlsx", skip=1)
+```
+
+
+b. Convert to timeseries -- drop the first column which contains dates.
+
+```{r 2.3b}
+tutelts <- ts(tutel[,-1], start=1981, frequency=4)
+```
+
+c. Construct timeseries plots of each of the three series
+```{r 2.3c}
+autoplot(tutelts, facets = TRUE)
+```
+
+## 6.2
+
+a. Plot the time series of sales of Product A
+```{r 6.2a}
+#autoplot(plastics)
+plastics %>% decompose(type="multiplicative") %>% autoplot()
+
+```
+
+b Calculate the trend-cycle and the seasonality using multiplicative decomp
+```{r 6.2b}
+#does calculate indicate something other than plot?
+plastics %>% stl(t.window=4, s.window="periodic", robust = TRUE) %>% autoplot()
+```
+c. Do results support the graphical interpretaion?
+```{r 6.2c}
+??
+```
+d. Plot seasonally adjusted data
+```{r 6.2d}
+fit <- mstl(plastics)
+fit %>% seasadj()%>%autoplot()
+```
+
+e + f. Add an outlier -- recompute. What is the effect?
+
+The location of the outlier affects the location of the anamoly
+
+```{r 6.2ef}
+
+outlier <- function(n, v){
+  myplastics <- plastics
+  myplastics[[n]] <- v
+  myfit <- mstl(myplastics)
+  myfit %>% seasadj()%>%autoplot()
+}
+
+outlier(1, 500)
+
+outlier(30, 500)
+
+outlier(60, 50)
+```
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
