@@ -1,0 +1,234 @@
+---
+title: 'Data 624: Predictive Analytics HW 1, Week 2'
+author: "Kayleah Griffen"
+date: "5/21/2023"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+always_allow_html: true
+---
+
+## Introduction
+
+This homework assignment includes problems from:
+
+(1) Hyndman & Athanasopoulos. "Forecasting: Principles and Practice"
+(2) Kuhn & Johnson. "Applied Predictive Modeling"
+
+This accompanies readings from KJ 1,2 and 3 and HA 1,2,6,7 and 8.
+
+## Homework Solutions
+
+### KJ 3.1
+
+The UC Irvine Machine Learning Repository contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refractive index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe. The data can be accessed via:
+
+`library(mlbench)`
+`data(Glass)`
+`str(glass)`
+
+(a) Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
+
+```{r, warning=FALSE, message = FALSE}
+library(mlbench)
+library(GGally)
+data(Glass)
+str(Glass)
+
+for (i in 1:(ncol(Glass)-1)){
+  p <- ggplot(Glass, aes(x=Glass[,i])) + 
+  geom_histogram(bins=30) +
+  ggtitle(colnames(Glass)[i])
+  print(p)
+}
+
+ggpairs(Glass, title="correlogram with ggpairs()", columns = 1:9) + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+ggcorr(Glass[1:9], method = c("all.obs", "pearson")) 
+
+```
+
+In terms of distributions, some are normal, some are skewed or heavily skewed, some contain outliers. The closest to normal distributions appear to be the Na, Al and Si. The outliers and skew will be addressed in part (b). The relationship between the predictors are explored using the `GGally` libraries capabilites. Based on this we can see that the strongest correlation exists between Ca and RI (at 0.81) this suggests that these predictors may be collinear. Aside from this correlation, there are multiple correlations between 0.4 and 0.6 for example -0.542 between Si and RI and -0.482 between Al and Mg and -0.444 between Ca and Mg and -0.479 between Ba and Al. Aside from these the correlations are lower and the relationship between the remaining predictors would not be described as collinear.ss
+
+(b) Do there appear to be any outliers in the data? Are any predictors skewed?
+
+Based on the histograms in part (a) you can see which predictors are skewed visually and another way to check, is to use the `e1071` package.
+
+```{r, warning= FALSE, message=FALSE}
+library(e1071)
+skewValues <- apply(Glass[1:9],2, skewness)
+(skewValues)
+
+```
+
+Based on the skewness, a negative value is left skewed and a positive value is right skewed. According to the histogram and the skewness value you can see K is heavily right skewed, Ba, Ca, Fe, and RI are also right skewed. Then Mg is left skewed. The other predictors have a low absolute value for the skew and could be classified as normal.
+
+To help identify outliers, we can make a boxplot.
+
+```{r, warning=FALSE, message = FALSE}
+library(tidyverse)
+library(reshape2)
+
+melteddf <- melt(Glass)
+
+melteddf_1 <- melteddf |> filter(variable == "RI" | 
+                                   variable == "Al" |
+                                   variable == "K" |
+                                   variable == "Ba" |
+                                   variable == "Fe")
+
+melteddf_2 <- melteddf |> filter(variable == "Na" | 
+                                   variable == "Ca" |
+                                   variable == "Mg")
+
+melteddf_3 <- melteddf |> filter(variable == "Si")
+
+p <- melteddf |> ggplot(aes(x=variable, y= value)) + 
+geom_boxplot() +
+ggtitle(colnames(Glass)[i])
+print(p)
+
+p <- melteddf_1 |> ggplot(aes(x=variable, y= value)) + 
+geom_boxplot() +
+ggtitle(colnames(Glass)[i])
+print(p)
+
+p <- melteddf_2 |> ggplot(aes(x=variable, y= value)) + 
+geom_boxplot() +
+ggtitle(colnames(Glass)[i])
+print(p)
+
+p <- melteddf_3 |> ggplot(aes(x=variable, y= value)) + 
+geom_boxplot() +
+ggtitle(colnames(Glass)[i])
+print(p)
+
+```
+
+
+There is at least one outlier in all of the variables. The most outliers seem to occur in Ca.
+
+(c) Are there any relevant transformations of one or more predictors that might improve the classification model?
+
+Yes there are transformations that can be applied to some of the predictors that may improve the classification model. 
+
+(1) OUTLIERS: According to the book for outliers the first step is to check if they are valid or if an error could have occurred. You have to be careful to not remove an outlier that may be true, especially if the sample data is small. However if there is a real outlier one option is to use a spatial sign which projects the predictors onto a multidimensional sphere to make all of the samples the same distance form the center.
+
+(2) CENTERING & SCALING: According to the book it can be useful to center the scale of the predictor variables - where the average predictor value is subtracted from all of the values giving the centered scale a 0 mean. Then to scale it the predictor can be divided by its standard deviation so the standard deviation is 1. This can improve numerical stability because some models benefit from predictors being on a common scale.
+
+(3) SKEWNESS: Replacing the data with the log, square root or inverse can help remove skew and after the transformation the distribution should be closer to symmetric. The Box and Cox can be used to use the data to help determine what transformation should be used.
+
+(4) MISSING VALUES: Missing data can be removed or imputed (try to estimate missing values)
+
+#TODO: APPLY TRANSFORMS#
+
+```{r}
+
+
+```
+
+
+### KJ 3.2
+
+The soybean data can also be found at the UC Irvine Machine Learning
+Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+The data can be loaded via:
+`library(mlbench)`
+`data(Soybean)`
+`?Soybean`
+
+(a) Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?
+
+Below are the plots of the frequency distributions for the categorical predictors. According to the book degenerate data could come in a variety of forms but there can be significant improvements to model performance when these are removed. One issue is if a predictor has a single unique value, this has no information and can be discarded. Or a predictor can have only some unique values that occur at low frequencies, "near-zero variance predictor" may have a single value with most of the samples. In summary if the fraction of unique values over the sample size is low (under 10%) and the ratio of the frequency of the most prevalent value to the frequency of the second most prevalent value is large (around 20) it may be good to remove the predictor. Another degenerate data example would be data that is collinear or multi-linear
+
+```{r, warning=FALSE, message = FALSE}
+library(mlbench)
+data(Soybean)
+# ?Soybean
+
+for (i in 2:(ncol(Soybean))){
+  p <- ggplot(Soybean, aes(x=(Soybean[,i]))) + 
+  geom_bar() +
+  ggtitle(colnames(Soybean)[i]) + xlab(colnames(Soybean)[i])
+  print(p)
+}
+
+```
+
+
+Looking at the plots, there are multiple cases where the ratio for the most common predictor to the least common predictor is over 20. The most dramatic case of this appears to be for the mycelium predictor where there are over 600 0 values and less than 10 1 values, with the remaining being NAs. Additionally, usually the unique values compared to the sample size is low.
+
+The book demonstrates the use of the `caret` package which will return column numbers for predictors that are degenerate.
+
+```{r, warning=FALSE, message = FALSE}
+library(caret)
+degen <- nearZeroVar(Soybean)
+colnames(Soybean[degen])
+```
+
+If we refer back to these plots, we can see that in each of these cases the ratio of the most prevalent to the least prevalent is very high.
+
+(b) Roughly 18 % of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?
+
+First, calculate the number of missing values for each predictor.
+
+```{r, warning=FALSE, message = FALSE}
+library(DT)
+
+soybean_nas <- Soybean |> summarise(across(everything(), ~ sum(is.na(.))))
+
+soybean_nas <- soybean_nas[2:length(soybean_nas)]
+
+soybean_nas_long <- soybean_nas |> pivot_longer(everything(), 
+                            names_to = "predictor",
+                            values_to = "na_count")
+
+datatable(soybean_nas_long |> arrange(desc(na_count)))
+
+soybean_nas_long |> ggplot(aes(x=fct_reorder(predictor, na_count), y=na_count)) + geom_col() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + labs(x = "predictor", title = "Count of NA for each Predictor") 
+
+```
+
+The most common predictors to be missing are "hail", "sever", "seed.tmt" and "lodging".
+
+Next, we need to see if any specific class is more likely to have NAs than other classes.
+
+```{r}
+df_soybean <- Soybean
+df_soybean$row_sum_na <- rowSums(is.na(Soybean))
+
+class_nas_all <- df_soybean |>
+  group_by(Class) |>
+  summarise(class_nas = sum(row_sum_na)) |>
+  arrange(desc(class_nas))
+
+head(class_nas_all)
+```
+
+Yes, specific classes are much more likely to contain NAs than others - these are shown above - 5 classes make up ALL of the NAs and the remaining classes have no NAs.
+
+(c) Develop a strategy for handling missing data, either by eliminating predictors or imputation.
+
+Based on the analysis in part A, "leaf.mild" "mycelium" and  "sclerotia" are degenerate predictors and can be removed. 
+
+```{r}
+df_soybean <- df_soybean[-degen]
+```
+
+Next for imputation, one option is to use the K-nearest neighbor. According to the book the "advantage of this approach is that the imputed data are confined to be within the range of the training set values... one disadvantage is that the entire training set is required every time a missing value needs to be imputed". In this case, the dataset is not large, so we can try to use KNN to impute.
+
+```{r, warning=FALSE, message = FALSE}
+library(DMwR2)
+# impute 
+# https://www.rdocumentation.org/packages/DMwR2/versions/0.0.2/topics/knnImputation
+soybean_imputed <- knnImputation(df_soybean,k=3)
+# check for any NAs
+# https://discuss.analyticsvidhya.com/t/how-can-i-check-whether-my-data-frame-contains-na-inf-values-in-some-column-or-not-in-r/1647
+apply(soybean_imputed, 2, function(x) any(is.na(x)))
+```
+
+All values NA values were replaced. 
+
