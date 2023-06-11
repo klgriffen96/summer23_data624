@@ -1,0 +1,402 @@
+---
+title: "ippolito_data624_week3"
+author: "Michael Ippolito"
+date: "2023-06-10"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(fpp2)
+library(gridExtra)  # for gridding ggplots
+library(broom)      # for "glance" function
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## HA 8.1
+
+### HA 8.1 (a)
+
+Figure 8.31 shows the ACFs for 36 random numbers, 360 random numbers and 1,000 random numbers.
+
+**Explain the differences among these figures. Do they all indicate that the data are white noise?**
+
+![wnacfplus-1.png](wnacfplus-1.png)
+
+*Figure 8.31: Left: ACF for a white noise series of 36 numbers. Middle: ACF for a white noise series of 360 numbers. Right: ACF for a white noise series of 1,000 numbers.*
+
+All three series can be considered white noise, as there are only one or two lagged values that are above critical with no clear pattern.
+
+### HA 8.1 (b)
+
+**Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?**
+
+The critical values are those that occur above or below $\pm\frac{1.96}{\sqrt{T}}$, where T is the number of samples in the series. Since the denominator (square root of sample size) increases for each series while the numerator is held constant, the critical value will grow narrower as T gets larger.
+
+## HA 8.2
+
+**A classic example of a non-stationary series is the daily closing IBM stock price series (data set ibmclose). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.**
+
+As shown below, the ACF plot exhibits a downward decay consistent with autocorrelated values for each successive lag. If the series were stationary, the ACF plot would exhibit a drop to zero very soon after lag 1. The PACF only exhibits a single spike above significance at lag 1, indicating that an ARIMA (1,1,0) model would be appropriate, but the PACF by itself isn't useful at determining whether differencing is needed.
+
+```{r}
+
+# Load data
+data(ibmclose)
+
+# Plot
+ibmclose %>%
+    ggtsdisplay(plot.type='partial')
+
+```
+
+## HA 8.6
+
+### HA 8.6 (a)
+
+Use R to simulate and plot some data from simple ARIMA models.
+
+**Use the following R code to generate data from an AR(1) model with $ϕ_1$ = 0.6 and $σ^2$ = 1. The process starts with $y_1$ = 0.**
+
+y <- ts(numeric(100))
+e <- rnorm(100)
+for(i in 2:100)
+  y[i] <- 0.6*y[i-1] + e[i]
+
+```{r}
+
+# Make the R code provided in the problem into a function
+genTS_AR1 <- function(phi1) {
+
+    y <- ts(numeric(100))
+    e <- rnorm(100)
+    for(i in 2:100)
+        y[i] <- (phi1 * y[i - 1]) + e[i]
+    return(y)
+}
+
+# Generate initial time series
+set.seed(777)
+y <- genTS_AR1(0.6)
+
+```
+
+### HA 8.6 (b)
+
+**Produce a time plot for the series. How does the plot change as you change $ϕ_1$?**
+
+More negative values of $\phi$ make each successive value in the series more likely to have the opposite sign than the previous value, resulting in a plot that appears to fluctuate rapidly, with denser peaks and valleys. As $\phi$ approaches zero, any deviation between successive values is entirely due to random error, and therefore appears as white noise. More positive values of $\phi$ make each successive value more likely to have the same sign as the previous value, resulting in a series that appears to have wider-spaced peaks and valleys.
+
+```{r}
+
+# Generate initial time plot for series y
+y %>%
+    autoplot() +
+    ylab('y') +
+    ggtitle('AR1 time series')
+
+```
+
+```{r fig.width=11, fig.height=8}
+
+# Generate additional plots, varying phi1
+# (for an AR(1) model, -1 < phi < 1)
+plt <- list()
+phis <- seq(-0.8, 0.8, 0.2)
+for (i in seq(1, length(phis))) {
+    set.seed(777)
+    ynew <- genTS_AR1(phis[i])
+    plt[[i]] <- ynew %>%
+        autoplot() +
+        ylab('y') +
+        ggtitle(paste0('AR1 series, phi = ', phis[i]))
+}
+do.call('grid.arrange', c(plt, nrow=3))
+
+```
+
+### HA 8.6 (c)
+
+**Write your own code to generate data from an MA(1) model with $θ_1$ = 0.6 and $σ^2$ = 1.**
+
+```{r}
+
+# Function to generate MA(1) model given theta1
+genTS_MA1 <- function(theta1) {
+
+    y <- ts(numeric(100))
+    e <- rnorm(100)
+    for(i in 2:100)
+        y[i] <- (theta1 * e[i - 1]) + e[i]
+    return(y)
+}
+
+# Generate initial time series
+set.seed(777)
+yma1 <- genTS_MA1(0.6)
+
+```
+
+### HA 8.6 (d)
+
+**Produce a time plot for the series. How does the plot change as you change $θ_1$?**
+
+The peaks and valleys seem to widen as values of $\theta_1$ grow from negative to positive. This is because of the positive sign in front of the regression term $\theta_1 \epsilon_{t-1}$. Since since $\epsilon$ is a random number between -1 and 1 with a mean of 0 and standard deviation of 1, then multiplying one such number by a negative value and adding it to another random number with mean 0 and sd 1 will be more likely to result in a number with the opposite sign as the previous, resulting in the tighter peaks and valleys seen when $\theta_1$ is negative. The opposite is true when $\theta_1$ is positive: i.e., it is more likely that a number with the same sign is generated, meaning that that the current trend will continue. This results in a plot that appears to have peaks and valleys that are more spread out.
+
+```{r}
+
+# Generate time plot for MA1 series
+yma1 %>%
+    autoplot() +
+    ylab('y') +
+    ggtitle('MA1 time series')
+
+```
+
+```{r fig.width=11, fig.height=8}
+
+# Generate additional plots, varying theta1
+# (for an MA(1) model, -1 < theta < 1)
+pltma1 <- list()
+thetas <- seq(-0.8, 0.8, 0.2)
+for (i in seq(1, length(thetas))) {
+    set.seed(777)
+    ynew <- genTS_MA1(thetas[i])
+    pltma1[[i]] <- ynew %>%
+        autoplot() +
+        ylab('y') +
+        ggtitle(paste0('MA1 series, theta = ', thetas[i]))
+}
+do.call('grid.arrange', c(pltma1, nrow=3))
+
+```
+
+### HA 8.6 (e)
+
+**Generate data from an ARMA(1,1) model with $ϕ_1$ = 0.6, $θ_1$ = 0.6 and $σ^2$ = 1.**
+
+```{r}
+
+# Function to generate ARMA(1,1) model given phi1 and theta1
+genTS_ARMA1_1 <- function(phi1, theta1) {
+
+    y <- ts(numeric(100))
+    e <- rnorm(100)
+    for(i in 2:100)
+        y[i] <- (phi1 * y[i - 1]) + (theta1 * e[i - 1]) + e[i]
+    return(y)
+}
+
+# Generate initial time series
+set.seed(777)
+yarma1_1 <- genTS_ARMA1_1(0.6, 0.6)
+
+```
+
+### HA 8.6 (f)
+
+**Generate data from an AR(2) model with $ϕ_1$ = −0.8, $ϕ_2$ = 0.3 and $σ^2$ = 1. (Note that these parameters will give a non-stationary series.)**
+
+```{r}
+
+# Function to generate AR(2) model given phi1 and phi2
+genTS_AR2 <- function(phi1, phi2) {
+
+    y <- ts(numeric(100))
+    e <- rnorm(100)
+    for(i in 3:100)
+        y[i] <- (phi2 * y[i - 2]) + (phi1 * y[i - 1]) + e[i]
+    return(y)
+}
+
+# Generate initial time series
+set.seed(777)
+yar2 <- genTS_AR2(-0.8, 0.3)
+
+```
+
+### HA 8.6 (g)
+
+**Graph the latter two series and compare them.**
+
+The ARMA(1,1) model is stationary. Introducing an MA(1) term into an AR(1) model shouldn't (and doesn't) have any effect on producing any cyclicity, seasonality, or trend. On the other hand, the AR(2) model with the given $\phi_1$ and $\phi_2$ values does introduce stark seasonality into the plot. It is noted that when $\phi_2 - \phi_1$ > 1, similar seasonality can be produced. For example, similar plots can be produced with the following values:
+
+| $\phi_1$ | $\phi_2$ |
+|----------|----------|
+| -0.9     | 0.2      |
+| -0.8     | 0.3      |
+| -0.6     | 0.5      |
+| -0.4     | 0.7      |
+| -0.2     | 0.9      |
+
+This is because any random variation introduced by the $\epsilon$ term will be counteracted by adding the two $\phi$ terms together, which are guaranteed to have an absolute value greater than 1.
+
+```{r fig.width=11, fig.height=6}
+
+# Generate time plot for the ARMA(1,1)series
+p1 <- yarma1_1 %>%
+    autoplot() +
+    ylab('y') +
+    ggtitle('ARMA(1,1) time series')
+
+# Generate time plot for the AR(2) series
+p2 <- yar2 %>%
+    autoplot() +
+    ylab('y') +
+    ggtitle('AR(2) time series')
+
+# Arrange plots on grid
+grid.arrange(p1, p2, nrow=1)
+
+```
+
+## HA 8.8
+
+### HA 8.8 (a)
+
+Consider austa, the total international visitors to Australia (in millions) for the period 1980-2015.
+
+**Use auto.arima() to find an appropriate ARIMA model. What model was selected? Check that the residuals look like white noise. Plot forecasts for the next 10 periods.**
+
+The auto.arima() function fit an ARIMA(0,1,1) model with drift. Using the checkresiduals() function, residuals appear as white noise, and all lagged values are within the threshold limits.
+
+```{r}
+
+# Load data
+data(austa)
+
+# Plot
+austa %>%
+    ggtsdisplay()
+
+# Fit auto.arima model and show results
+fit <- auto.arima(austa)
+summary(fit)
+
+# Plot residuals
+checkresiduals(fit)
+
+# Plot forecasts for the next ten periods
+fit %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
+
+### HA 8.8 (b)
+
+**Plot forecasts from an ARIMA(0,1,1) model with no drift and compare these to part a. Remove the MA term and plot again.**
+
+As shown below, allowing drift in the model causes trend to be included in the forecast values, while point forecasts for the no-drift model are held constant. Removing the MA term generated similar point forecasts, but had a lower AICc than the ARIMA(0,1,1) model, indicating that the MA term may not be needed and that a simpler, random-walk model may be better.
+
+```{r}
+
+# Model using ARIMA(0,1,1) with no drift
+fit2 <- Arima(austa, order=c(0,1,1), include.drift=F)
+summary(fit2)
+
+# Plot
+fit2 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+# Remove the MA term, i.e., model using ARIMA(0,1,0) with no drift
+fit3 <- Arima(austa, order=c(0,1,0), include.drift=F)
+summary(fit3)
+
+# Plot
+fit3 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
+
+### HA 8.8 (c)
+
+**Plot forecasts from an ARIMA(2,1,3) model with drift. Remove the constant and see what happens.**
+
+Removing the constant from the model elicits an error from Arima() indicating that the AR part of the model is non-stationary. Performing another round of differencing fixes the problem, i.e. using an ARIMA(2,2,3) model, but it yields a model with a higher AICc than the ARIMA(2,1,3) model with drift.
+
+```{r}
+
+# Fit ARIMA(2,1,3) model with drift
+fit4 <- Arima(austa, order=c(2,1,3), include.drift=T)
+summary(fit4)
+
+# Plot
+fit4 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+# Fit ARIMA(2,1,3) model with drift, removing constant;
+# generates an error - non-stationary series
+# fit5 <- Arima(austa, order=c(2,1,3), include.drift=T, include.constant=F)
+
+# Model using second-order differencing instead
+fit5 <- Arima(austa, order=c(2,2,3), include.drift=T, include.constant=F)
+summary(fit5)
+
+# Plot
+fit5 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
+
+### HA 8.8 (d)
+
+**Plot forecasts from an ARIMA(0,0,1) model with a constant. Remove the MA term and plot again.**
+
+Removing the MA term simply plots the mean of the series.
+
+```{r}
+
+# Model ARIMA(0,0,1) with constant
+fit6 <- Arima(austa, order=c(0,0,1), include.constant=T)
+summary(fit6)
+
+# Plot forecasts
+fit6 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+# Remove the MA term, i.e., model ARIMA(0,0,0) with constant
+fit7 <- Arima(austa, order=c(0,0,0), include.constant=T)
+summary(fit7)
+
+# Plot forecasts
+fit7 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
+
+### HA 8.8 (e)
+
+**Plot forecasts from an ARIMA(0,2,1) model with no constant.**
+
+```{r}
+
+# Remove the MA term, i.e., model ARIMA(0,0,0) with constant
+fit8 <- Arima(austa, order=c(0,2,1), include.constant=F)
+summary(fit8)
+
+# Plot forecasts
+fit8 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
