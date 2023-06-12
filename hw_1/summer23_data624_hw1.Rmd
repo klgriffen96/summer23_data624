@@ -338,3 +338,49 @@ df_pigs <- df_pigs %>% mutate(
 df_pigs %>% t()
 ```
 
+
+### 3.1b
+Do their appear to be any outliers? Are any predictors skewed?
+
+```{r 3.1b}
+library(psych)
+describe(Glass)
+```
+
+### HA 7.3
+(In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.)
+
+Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
+
+There is not difference depending on the level!
+
+```{r 7.2}
+T <- length(pigs) %>% as.numeric()
+my_smooth <- function(y, alpha, level) {
+  
+  T <- length(y) %>% as.numeric()
+  
+  my_fitted <- c()
+  
+  #set first value 
+  my_fitted[1] <- level
+
+    # I really wish we could do this wihout a for loop!!!
+    # Also I don't understand why this doesn't have the exponential or summation??
+    for (i in 2:(T+1)) {
+    my_fitted[i] <- alpha * y[i-1] + (1 - alpha) * my_fitted[i-1]
+  }
+  
+  #return last value
+  return(my_fitted)
+  }
+
+alpha <- 0.291
+level <- pigs[1]
+
+my_smooth(pigs, alpha=alpha, level=level)[T+1]
+my_smooth(pigs, alpha=alpha, level=level/2)[T+1]
+
+ses(pigs, alpha=alpha)$mean[1]
+
+```
