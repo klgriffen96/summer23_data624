@@ -150,9 +150,8 @@ df_pigs %>% t()
 ### HA 7.3
 (In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.)
 
-Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
+Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. 
 
-There is not difference depending on the level!
 
 ```{r 7.2}
 T <- length(pigs) %>% as.numeric()
@@ -196,22 +195,17 @@ my_sse <- function(y, alpha, level) {
   return(sse)
 
 }
+```
 
-my_sse(pigs, alpha, level)
+Then use the `optim` function to find the optimal methods of alpha and l-0. 
 
-my_sse2 <- function(y, alpha, level) {
-  
-  y_hats <- ses(y, alpha=alpha)$mean[1:T]
-  resid <- y_hats - y
-  sse <- mapply(function(x) x^2, resid) %>% sum()
+```{r 7.3}
 
-  return(sse)
-
-}
-
-my_sse2(pigs, alpha, level)
 
 ```
+
+Do you get the same values as the `ses()` function?
+
 
 ## KJ 3.1
 ```{r 3.1}
