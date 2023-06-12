@@ -1,5 +1,5 @@
 ---
-title: "HW Week 1"
+title: "HW"
 author: "Alice Friedman"
 date: "2023-06-07"
 output: pdf_document
@@ -9,8 +9,8 @@ output: pdf_document
 knitr::opts_chunk$set(echo = FALSE)
 library(fpp2)
 ```
-
-## 2.1
+## Week 1
+### 2.1
 
 
 ```{r 2.1,eval=FALSE}
@@ -38,7 +38,7 @@ c. Use which.max() to spot the outlier in the gold series?
 which.max(gold)
 ```
 
-## 2.3
+### 2.3
 
 a. Download the file tutel.csv from the book website (read in from GitHub). 
 
@@ -59,7 +59,7 @@ c. Construct timeseries plots of each of the three series
 autoplot(tutelts, facets = TRUE)
 ```
 
-## 6.2
+### 6.2
 
 a. Plot the time series of sales of Product A
 ```{r 6.2a}
@@ -102,6 +102,55 @@ outlier(30, 500)
 
 outlier(60, 50)
 ```
+## Week 2
+
+
+### HA 7.1
+
+Consider the `pigs` series -- the number of pigs slaughtered in Victoria each month.
+
+### 7.1 a 
+
+Use the `ses` function to find the optimal levels of alpha and l-zero, and generate forecasts for the nexy 4 months.
+
+```{r 7.1a}
+fit_pigs <- pigs %>% ses(h=4)
+
+fit_pigs %>% autoplot()
+
+summary(fit_pigs)
+```
+### 7.1 b
+ Compute a 95% prediction interval for the first forecast using y-hat is plus or minus 1.96s where `s` is the standard deviation of the residuals. Compare your interval with the interval produced by R.
+```{r 7.1b}
+me <- 1.96*sd(fit_pigs$residuals)
+
+f1 <- fit_pigs$mean[1]
+
+
+```
+
+The first forecast is `r f1` with a 95% margin of error plus or minus `r me`. 
+
+```{r 7.1b_table}
+library(dplyr)
+labels_7.1b <- c("My Results", "R")
+my_pigs <- c(f1-me, f1+me)
+R_pigs <- c(fit_pigs$lower[5], fit_pigs$upper[5])
+df_pigs <- data.frame(my_pigs, R_pigs)
+colnames(df_pigs) <- labels_7.1b
+row.names(df_pigs) <- c("Lower 95% Bound", "Upper 95% Bound")
+df_pigs <- df_pigs %>% mutate(
+  `% Diff` = (`My Results` - R)/R*100
+)
+
+df_pigs %>% t()
+```
+
+### HA 7.3
+Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
+
+
 
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 ```
