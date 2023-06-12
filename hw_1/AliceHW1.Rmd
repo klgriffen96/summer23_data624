@@ -200,6 +200,7 @@ my_sse <- function(y, alpha, level) {
   
   # i am confused
   
+
   return(sse)
 
 }
