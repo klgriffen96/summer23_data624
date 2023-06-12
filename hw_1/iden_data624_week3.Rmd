@@ -1,0 +1,277 @@
+---
+title: "DATA 624 HW3"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 8.1
+
+#### Figure 8.31 shows the ACFs for random numbers, 360 random numbers, and 1,000 random numbers.
+
+![](wnacfplus-1.png)
+
+#### a) Explain the differences among these figures. Do they all indicate that the data are white noise?
+
+-   These are figures for three different size samples, smallest to largest from left to right.
+
+-   The dashed lines represent the critical values that are used to assess whether the observed autocorrelation coefficients are statistically significant or occur due to random chance.
+
+-   The critical values are estimated at a 95% confidence interval assuming normal distribution as $\pm1.96 / \sqrt{T}$ where $T$ is the sample size.
+
+-   All of the spikes appear to be within or at the critical values, indicating they all represent white noise.
+
+#### b) Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?
+
+-   The critical values are at different distances from the mean of zero because as $T$ increases, the critical values decreases.
+
+-   The autocorrelations are different in each figure because each figure represents random numbers, therefore the autocorrelations are different from one another.
+
+# 8.2
+
+#### A classic example of a non-stationary series is the daily closing IBM stock price series (data set `ibmclose`). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.
+
+```{r message=FALSE, warning=FALSE}
+library(fpp2)
+
+data("ibmclose")
+ggtsdisplay(ibmclose)
+```
+
+-   The **line plot** indicates the data is non-stationary because there doesn't appear to be any patterns. The data also does not appear to have a constant mean.
+
+-   The **ACF** plot indicates the data is non-stationary because the plot shows slow decay as the lag increases; in a stationary time-series, the autocorrelation will decrease rapidly as the lag increases.
+
+-   The **PACF** plot indicates that there is a strong correlation at lag 1, between the current observation and its immediate lag. This indicates the presence of an autoregressive component in the data which needs to be differenced in order to transform the data into a stationary series.
+
+# 8.6
+
+#### Use R to simulate and plot some data from simple ARIMA models.
+
+#### a) Use the following R code to generate data from an AR(1) model with,
+
+$φ_1 = 0.6$ and $σ^2 = 1$.
+
+#### The process starts with,
+
+$y_1 = 0$.
+
+```{r}
+# y = ts(numeric(100))
+# e = rnorm(100)
+# for(i in 2:100)
+#   y[i] = 0.6*y[i-1] + e[i]
+
+ar = function(phi, sd, n){
+  y = ts(numeric(n))
+  e = rnorm(n, sd=sd)
+  
+  for(i in 2:n)
+    y[i] = phi*y[i-1] + e[i]
+  
+  return(y)
+}
+```
+
+#### Produce a time plot for the series. How does the plot change as you change
+
+$φ_1$?
+
+```{r}
+library(ggthemes)
+set.seed(123)
+autoplot(ar(0.6,1,100), series="0.6") +
+  autolayer(ar(0.3,1,100), series="0.3") +
+  autolayer(ar(0.9,1,100), series="0.9") +
+  ylab('Data') + theme_calc() +
+  labs(color = "phi")
+```
+
+We can see that the variance becomes larger as phi increases. This makes sense, as the variance in an AR(1) model is inversely related to the value of phi. 
+
+#### c) Write your own code to generate data from an MA(1) model with 
+
+$θ_1 = 0.6$ and $σ^2 = 1$
+
+```{r}
+ma = function(theta, sd, n){
+  y = ts(numeric(n))
+  e = rnorm(n, sd=sd)
+  
+  for(i in 2:n)
+    y[i] = theta*e[i-1] + e[i]
+  
+  return(y)
+}
+```
+
+#### d) Produce a time plot for the series. How does the plot change as you change 
+
+$θ_1$? 
+
+```{r}
+set.seed(123)
+autoplot(ma(0.6,1,100), series="0.6") +
+  autolayer(ma(0.3,1,100), series="0.3") +
+  autolayer(ma(0.9,1,100), series="0.9") +
+  ylab('Data') + theme_calc() +
+  labs(color = "theta")
+```
+
+We see again that the variance in the data increases as theta increases. 
+
+#### e) Generate data from an ARMA(1,1) model with, 
+
+$φ_1 = 0.6$, $θ_1 = 0.6$ and $σ^2 = 1$.  
+
+```{r}
+arma.1.1 = function(phi, theta, sd, n){
+  y = ts(numeric(n))
+  e = rnorm(n, sd=sd)
+  
+  for(i in 2:n)
+    y[i] = phi * y[i-1] + e[i] + theta *e[i-1]
+  
+  return(y)
+}
+```
+
+#### f) Generate data from an AR(2) model with,
+
+$φ_1 = -0.8$, $φ_2 = 0.3$, and $σ^2 = 1$. (Note that these parameters will give a non-stationary series.)
+
+```{r}
+ar.2 = function(phi1, phi2, sd, n){
+  y = ts(numeric(n))
+  e = rnorm(n, sd=sd)
+  
+  for(i in 3:n)
+    y[i] = phi1 * y[i-1] + phi2 * y[i-2] + e[i]
+  
+  return(y)
+}
+```
+
+#### g) Graph the latter two series and compare them. 
+
+```{r}
+library(gridExtra)
+
+model1 = autoplot(arma.1.1(0.6, 0.6, 1, 100), main='ARMA(1,1): Phi = 0.6, Theta = 0.6') + ylab('Data')
+model2 = autoplot(ar.2(-0.8, 0.3, 1, 100), main='AR(2): Phi1 = -0.8, Phi2 = 0.3') + ylab('')
+acf1 = ggAcf(arma.1.1(0.6, 0.6, 1, 100)) + ggtitle('')
+acf2 = ggAcf(ar.2(-0.8, 0.3, 1, 100)) + ggtitle('')
+
+grid.arrange(model1, model2, 
+             acf1, acf2,
+             nrow = 2)
+```
+
+- The ARMA(1,1) model appears nearly stationary. The AR(2) model appears to have some seasonality and the variance expands exponentially over time. 
+
+# 8.8 
+
+#### Consider `austa`, the total international visitors to Australia (in millions) for the period 1980-2015. 
+
+#### a) Use `auto.arima()` to find an appropriate ARIMA model. What model was selected? Check that the residuals look like white noise. Plot forecasts for the next 10 periods. 
+
+```{r}
+data(austa)
+
+fit.a = auto.arima(austa)
+fit.a
+```
+The `auto.arima()` function selected an ARIMA(0,1,1) model with drift. 
+
+```{r}
+checkresiduals(fit.a)
+```
+
+The p-value of the residuals is well above alpha indicating it is white noise.  
+
+Plotting forecasts for next 10 periods, 
+
+```{r}
+autoplot(austa) +
+  autolayer(forecast(fit.a, h=10)) +
+  xlab('Year') + ylab('Visitors (in Millions)') + 
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+#### b) Plot forecasts from an ARIMA(0,1,1) model with no drift and compare these to part a. Remove the MA term and plot again. 
+
+```{r}
+fit.b = Arima(austa, order = c(0,1,1))
+
+autoplot(austa) +
+  autolayer(forecast(fit.a, h=10), alpha=0.4, series="with") +
+  autolayer(forecast(fit.b, h=10), alpha=0.4, series="without") +
+  xlab('Year') + ylab('Visitors (in Millions)') + 
+  labs(color = "drift") + 
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+The model without drift levels off at the last recorded observation. Removing the MA term yields the equivalent of an ARIMA(0,1,0) model, where it appears the last recorded observation is used as the mean for the forecast.
+
+```{r}
+autoplot(austa) +
+  autolayer(forecast(Arima(austa, order = c(0,1,0)), h=10))  +
+  xlab('Year') + ylab('Visitors (in Millions)') + 
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+This yields the same result as the ARIMA(1,0,1) model with drift. 
+
+#### c) Plot forecasts from an ARIMA(2,1,3) model with drift. Remove the constant and see what happens.  
+
+```{r}
+fit.c = Arima(austa, order = c(2,1,3), include.drift = TRUE)
+
+autoplot(austa) +
+  autolayer(forecast(fit.c, h=10), alpha=0.4) +
+  xlab('Year') + ylab('Visitors (in Millions)') + 
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+Attempting to remove the constant generates an error: non-stationary AR part from CSS.
+
+#### d) Plot forecasts from an ARIMA(0,0,1) model with a constant. Remove the MA term and plot again. 
+
+```{r}
+fit.d = Arima(austa, order = c(0,0,1), include.mean=TRUE)
+fit.d.no.ma = Arima(austa, order = c(0,0,0), include.mean=TRUE)
+
+autoplot(austa) +
+  autolayer(forecast(fit.d, h=10), alpha=0.4, series="with") +
+  autolayer(forecast(fit.d.no.ma, h=10), alpha=0.4, series="without") +
+  xlab('Year') + ylab('Visitors (in Millions)') + labs(color="ma") +
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+One moving average with a constant yields what appears to be the mean of the series as the forecast mean. Removing the constant expands the 95% prediction interval from zero to just greater than the last recorded observation.
+
+#### e) Plot forecasts from an ARIMA(0,2,1) model with no constant. 
+
+```{r}
+fit.e = Arima(austa, order = c(0,2,1), include.constant = FALSE)
+
+autoplot(austa) +
+  autolayer(forecast(fit.e, h=10), alpha=0.4) +
+  xlab('Year') + ylab('Visitors (in Millions)') + 
+  ggtitle('Total International Visitors - Australia') +
+  theme_few()
+```
+
+This looks remarkably similar to the model with the `auto.arima()` function selected, albeit with a wider prediction interval. 
