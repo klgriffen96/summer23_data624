@@ -150,62 +150,102 @@ df_pigs %>% t()
 ### HA 7.3
 (In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.)
 
-Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
+Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. 
+
 
 ```{r 7.2}
-#something is wrong with this
+T <- length(pigs) %>% as.numeric()
 my_smooth <- function(y, alpha, level) {
   
-  T <- length(y)
+  T <- length(y) %>% as.numeric()
   
-  j <- seq(0:T-1)
-    
-  # create a function that will sum using the sequence
-  calc_yhat <- function(j){
-    return(
-      alpha*(1-alpha)^j * y[T-j] + level*(1-alpha)^T
-    )
+  my_fitted <- c()
+  
+  #set first value 
+  my_fitted[1] <- level
+
+    # I really wish we could do this wihout a for loop!!!
+    # Also I don't understand why this doesn't have the exponential or summation??
+    for (i in 2:(T+1)) {
+    my_fitted[i] <- alpha * y[i-1] + (1 - alpha) * my_fitted[i-1]
   }
-    
-  # use mapply to iterate over j, and then unlist + sum to return the summed series
-  # note: this has significant performance improvements over loops, but it returns a list
-  y_hat <- mapply(calc_yhat, j) %>% unlist() %>% sum()
-  return(y_hat)
+  
+  #return last value
+  return(my_fitted)
+  }
 
-}
+alpha <- 0.291
+level <- pigs[1]
 
-alpha <- 0.2971
-level <- pigs[1] 
-my_smooth(pigs, alpha=alpha, level=level)
+my_smooth(pigs, alpha=alpha, level=level)[T+1]
+my_smooth(pigs, alpha=alpha, level=level/2)[T+1]
+
+ses(pigs, alpha=alpha)$mean[1]
 
 ```
 
-```{r 7.3}
+
+```{r 7.3sse}
 my_sse <- function(y, alpha, level) {
   
-  T <- length(y)
-  
-  j <- seq(0:T-1)
-    
-  # create a function that will sum using the sequence
-  calc_yhat <- function(j){
-    return(
-      alpha*(1-alpha)^j * y[T-j] + level*(1-alpha)^T
-    )
-  }
-    
-  # use mapply to iterate over j, and then unlist + sum to return the summed series
-  # note: this has significant performance improvements over loops, but it returns a list
-  y_hat <- mapply(calc_yhat, j) %>% unlist() %>% sum()
-  
-  # i am confused
-  
+  y_hats <- my_smooth(y, alpha, level)
+  resid <- y_hats - y
+  sse <- mapply(function(x) x^2, resid) %>% sum()
 
   return(sse)
 
 }
+```
+
+Then use the `optim` function to find the optimal methods of alpha and l-0. 
+
+```{r 7.3optim}
+optim(pigs)
 
 ```
+
+Do you get the same values as the `ses()` function?
+
+
+## KJ 3.1
+```{r 3.1}
+library(mlbench)
+data(Glass)
+str(Glass)
+```
+### 3.1a
+Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
+
+```{r}
+boxf <- function(key){
+    p <- ggplot(Glass, 
+                aes(factor(Type), {{key}})) + 
+                           geom_boxplot() + 
+                           xlab("Type")
+
+  print(p)
+}
+
+cols <- names(Glass) %>% head(-1)
+
+
+  boxf(col[1])
+
+```
+
+
+### 3.1b
+Do their appear to be any outliers? Are any predictors skewed?
+
+```{r 3.1b}
+library(psych)
+describe(Glass)
+
+```
+
+## KJ 3.2
+
+
 
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 ```
