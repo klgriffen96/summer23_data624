@@ -148,9 +148,63 @@ df_pigs %>% t()
 ```
 
 ### HA 7.3
+(In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.)
+
 Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
 
+```{r 7.2}
+#something is wrong with this
+my_smooth <- function(y, alpha, level) {
+  
+  T <- length(y)
+  
+  j <- seq(0:T-1)
+    
+  # create a function that will sum using the sequence
+  calc_yhat <- function(j){
+    return(
+      alpha*(1-alpha)^j * y[T-j] + level*(1-alpha)^T
+    )
+  }
+    
+  # use mapply to iterate over j, and then unlist + sum to return the summed series
+  # note: this has significant performance improvements over loops, but it returns a list
+  y_hat <- mapply(calc_yhat, j) %>% unlist() %>% sum()
+  return(y_hat)
 
+}
+
+alpha <- 0.2971
+level <- pigs[1] 
+my_smooth(pigs, alpha=alpha, level=level)
+
+```
+
+```{r 7.3}
+my_sse <- function(y, alpha, level) {
+  
+  T <- length(y)
+  
+  j <- seq(0:T-1)
+    
+  # create a function that will sum using the sequence
+  calc_yhat <- function(j){
+    return(
+      alpha*(1-alpha)^j * y[T-j] + level*(1-alpha)^T
+    )
+  }
+    
+  # use mapply to iterate over j, and then unlist + sum to return the summed series
+  # note: this has significant performance improvements over loops, but it returns a list
+  y_hat <- mapply(calc_yhat, j) %>% unlist() %>% sum()
+  
+  # i am confused
+  
+  return(sse)
+
+}
+
+```
 
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 ```
