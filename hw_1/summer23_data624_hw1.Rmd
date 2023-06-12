@@ -21,7 +21,7 @@ This homework assignment includes problems from:
 
 This accompanies readings from KJ 1,2 and 3 and HA 1,2,6,7 and 8.
 
-## Homework Solutions
+## Week 1 Homework Solutions
 
 ### HA 2.1
 
@@ -296,7 +296,7 @@ outlier(30, 500)
 
 If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.
 
-## Week 2
+## Week 2 Homework Solutions
 
 ### HA 7.1
 
@@ -379,30 +379,49 @@ ses(pigs, alpha=alpha)$mean[1]
 
 ```
 
+```{r 7.3sse}
+my_sse <- function(y, alpha, level) {
+  
+  y_hats <- my_smooth(y, alpha, level)
+  resid <- y_hats - y
+  sse <- mapply(function(x) x^2, resid) %>% sum()
+
+  return(sse)
+
+}
+```
+
+Then use the `optim` function to find the optimal methods of alpha and l-0. 
+ ## NOT DONE!
+```{r 7.3optim}
+
+```
+
 ## KJ 3.1
 ```{r 3.1}
 library(mlbench)
 data(Glass)
 str(Glass)
 ```
+
 ### 3.1a
 Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
 
-```{r}
-boxf <- function(key){
-    p <- ggplot(Glass, 
-                aes(factor(Type), {{key}})) + 
-                           geom_boxplot() + 
-                           xlab("Type")
+```{r 3.1a}
+library(gridExtra)
 
-  print(p)
-}
+p1 <- ggplot(Glass, aes(factor(Type), RI)) + geom_boxplot() + xlab("Type")
+p2 <- ggplot(Glass, aes(factor(Type), Na)) + geom_boxplot() + xlab("Type")
+p3 <- ggplot(Glass, aes(factor(Type), Mg)) + geom_boxplot() + xlab("Type")
+p4 <- ggplot(Glass, aes(factor(Type), Al)) + geom_boxplot() + xlab("Type")
+p5 <- ggplot(Glass, aes(factor(Type), Si)) + geom_boxplot() + xlab("Type")
+p6 <- ggplot(Glass, aes(factor(Type), K)) + geom_boxplot() + xlab("Type")
+p7 <- ggplot(Glass, aes(factor(Type), Ca)) + geom_boxplot() + xlab("Type")
+p8 <- ggplot(Glass, aes(factor(Type), Ba)) + geom_boxplot() + xlab("Type")
+p9 <- ggplot(Glass, aes(factor(Type), Fe)) + geom_boxplot() + xlab("Type")
 
-cols <- names(Glass) %>% head(-1)
 
-
-  boxf(col[1])
-
+grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p9)
 ```
 
 
