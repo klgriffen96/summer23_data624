@@ -407,7 +407,13 @@ str(Glass)
 ### 3.1a
 Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
 
-```{r 3.1a}
+```{r 3.1a_pLots}
+library(gridExtra)
+
+Glass %>% select(-Type) %>% gather() %>% ggplot(aes(value)) + geom_histogram() + facet_wrap(~key, scales = "free")
+```
+
+```{r 3.1a_targetPLots}
 library(gridExtra)
 
 p1 <- ggplot(Glass, aes(factor(Type), RI)) + geom_boxplot() + xlab("Type")
@@ -426,7 +432,7 @@ grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p9)
 
 
 ### 3.1b
-Do their appear to be any outliers? Are any predictors skewed?
+Do there appear to be any outliers? Are any predictors skewed?
 
 ```{r 3.1b}
 library(psych)
