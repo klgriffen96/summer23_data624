@@ -169,6 +169,7 @@ my_smooth <- function(y, alpha, level) {
     
   # use mapply to iterate over j, and then unlist + sum to return the summed series
   # note: this has significant performance improvements over loops, but it returns a list
+  # don't we have to sum the values?? but this gives the wrong answer
   y_hat <- mapply(calc_yhat, j) %>% unlist() %>% sum()
   return(y_hat)
 
@@ -217,7 +218,6 @@ str(Glass)
 Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
 
 ```{r}
-# this does not work UGH
 boxf <- function(key){
     p <- ggplot(Glass, 
                 aes(factor(Type), {{key}})) + 
@@ -227,13 +227,10 @@ boxf <- function(key){
   print(p)
 }
 
-#list of cols except Type
 cols <- names(Glass) %>% head(-1)
 
 
-for (col in cols) {
-  boxf(col)
-}
+  boxf(col[1])
 
 ```
 
