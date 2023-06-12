@@ -207,5 +207,49 @@ my_sse <- function(y, alpha, level) {
 
 ```
 
+## KJ 3.1
+```{r 3.1}
+library(mlbench)
+data(Glass)
+str(Glass)
+```
+### 3.1a
+Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
+
+```{r}
+# this does not work UGH
+boxf <- function(key){
+    p <- ggplot(Glass, 
+                aes(factor(Type), {{key}})) + 
+                           geom_boxplot() + 
+                           xlab("Type")
+
+  print(p)
+}
+
+#list of cols except Type
+cols <- names(Glass) %>% head(-1)
+
+
+for (col in cols) {
+  boxf(col)
+}
+
+```
+
+
+### 3.1b
+Do their appear to be any outliers? Are any predictors skewed?
+
+```{r 3.1b}
+library(psych)
+describe(Glass)
+
+```
+
+## KJ 3.2
+
+
+
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 ```
