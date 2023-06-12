@@ -185,7 +185,7 @@ ses(pigs, alpha=alpha)$mean[1]
 ```
 
 
-```{r 7.3}
+```{r 7.3sse}
 my_sse <- function(y, alpha, level) {
   
   y_hats <- my_smooth(y, alpha, level)
@@ -199,8 +199,8 @@ my_sse <- function(y, alpha, level) {
 
 Then use the `optim` function to find the optimal methods of alpha and l-0. 
 
-```{r 7.3}
-
+```{r 7.3optim}
+optim(pigs)
 
 ```
 

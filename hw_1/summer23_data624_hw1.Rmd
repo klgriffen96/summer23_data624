@@ -346,7 +346,7 @@ df_pigs %>% t()
 
 Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
 
-There is not difference depending on the level!
+There is not difference depending on the level for moderate values of alpha, but for small alpha it does make a difference.
 
 ```{r 7.2}
 T <- length(pigs) %>% as.numeric()
@@ -374,6 +374,8 @@ level <- pigs[1]
 
 my_smooth(pigs, alpha=alpha, level=level)[T+1]
 my_smooth(pigs, alpha=alpha, level=level/2)[T+1]
+my_smooth(pigs, alpha=1/T, level=level)[T+1]
+my_smooth(pigs, alpha=1/T, level=level/2)[T+1]
 
 ses(pigs, alpha=alpha)$mean[1]
 
@@ -407,29 +409,31 @@ str(Glass)
 ### 3.1a
 Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
 
-```{r 3.1a_pLots}
-library(gridExtra)
+```{r 3.1a_pLots, message=FALSE, warning=FALSE}
 
 Glass %>% select(-Type) %>% gather() %>% ggplot(aes(value)) + geom_histogram() + facet_wrap(~key, scales = "free")
+
+Glass %>% select(-Type) %>% gather() %>% ggplot(aes(value)) + geom_boxplot() + facet_wrap(~key, scales = "free")
+
 ```
 
 ```{r 3.1a_targetPLots}
-library(gridExtra)
+Glass %>% gather("key", "value", -Type) %>% 
+  ggplot(aes(factor(Type), value)) + 
+  geom_boxplot() + 
+  facet_wrap(~key, scales = "free") 
 
-p1 <- ggplot(Glass, aes(factor(Type), RI)) + geom_boxplot() + xlab("Type")
-p2 <- ggplot(Glass, aes(factor(Type), Na)) + geom_boxplot() + xlab("Type")
-p3 <- ggplot(Glass, aes(factor(Type), Mg)) + geom_boxplot() + xlab("Type")
-p4 <- ggplot(Glass, aes(factor(Type), Al)) + geom_boxplot() + xlab("Type")
-p5 <- ggplot(Glass, aes(factor(Type), Si)) + geom_boxplot() + xlab("Type")
-p6 <- ggplot(Glass, aes(factor(Type), K)) + geom_boxplot() + xlab("Type")
-p7 <- ggplot(Glass, aes(factor(Type), Ca)) + geom_boxplot() + xlab("Type")
-p8 <- ggplot(Glass, aes(factor(Type), Ba)) + geom_boxplot() + xlab("Type")
-p9 <- ggplot(Glass, aes(factor(Type), Fe)) + geom_boxplot() + xlab("Type")
-
-
-grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p9)
 ```
 
+```{r 3.1a_corrPLots}
+# Added from Michael's
+
+# Filter for just quantitative vars
+glassQuant <- Glass %>% select (-Type)
+
+# Corr chart
+chart.Correlation(glassQuant)
+```
 
 ### 3.1b
 Do there appear to be any outliers? Are any predictors skewed?
