@@ -416,6 +416,8 @@ Using SES, 98816.41 pigs are forecast to be slaughtered during each of the four 
 
 # Load data
 data(pigs)
+summary(pigs)
+pigs
 
 # Plot
 pigs %>% autoplot()
@@ -467,7 +469,8 @@ for (i in seq(1, 4)) {
 
 Use weighted average form of the SES equation:
 
-$\hat{y}_{{T + 1}|T}\ =\ \sum_{j=0}^{T-1} \alpha(1\ -\ \alpha)^j\ y_{T-j}\ +\ (1\ -\ \alpha)^Tℓ_0$
+$\hat{y}_{{t + 1}|t}\ =\ \alpha\ y_t\ +\ (1\ -\ \alpha)\ \hat{y}_{t|{t - 1}}$
+
 
 Using the values produced by the ses() function for α and $ℓ_0$, the custom function does return the same value as the ses() function: 98816 (rounded) in both cases. It is noted that various values of $ℓ_0$ were tried, and they produced the same result. However, when alpha was varied, different results were returned, indicating that the outcome is heavily dependent on which value of alpha is chosen.
 
@@ -475,6 +478,8 @@ Using the values produced by the ses() function for α and $ℓ_0$, the custom f
 
 # Function to implement SES
 my_ses <- function(y, alpha, level) {
+    
+    print(paste('before:', level))
     
     # Initialize vector to store forecast values
     fitted <- c()
@@ -494,13 +499,17 @@ my_ses <- function(y, alpha, level) {
     # Find the next fitted value in the series
     fitted[T + 1] <- alpha * (y[T]) + (1 - alpha) * fitted[T]
     
+    print(paste('after:', level))
+    
     # Return fitted values
     return(fitted[T + 1])
 
 }
 
 # Calculate SES using custom function
-my_ses(pigs, 0.2971, 77260.0561)
+print(paste('my_ses() result with initial level of 77260.0561:', my_ses(pigs, 0.2971, 77260.0561)))
+print(paste('my_ses() result with initial level of 55:', my_ses(pigs, 0.2971, 55)))
+
 
 ```
 
