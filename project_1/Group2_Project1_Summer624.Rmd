@@ -63,19 +63,29 @@ head(df_all_given$S01, 5) |>
 
 
 ```{r}
+for (i in 1:length(df_all_given)){
+  t <- map(df_all_given[[i]], ~sum(is.na(.)))
+  print(t)
+}
+```
+
+
+```{r}
 
 ## Below here is just some code to make NAs provided in original file into Inf 
 ## AND make the skipped time seriesInds into NAs just so there is a distinction
 
+df_all_series <- df_all_given
+
 # Convert NAs to Inf
-for (i in 1:length(df_all_given)){
-  df_all_given[[i]][is.na( df_all_given[[i]])] <- Inf
+for (i in 1:length(df_all_series)){
+  df_all_series[[i]][is.na( df_all_series[[i]])] <- Inf
 }
 
 # Make the skipped time values NAs
-df_all_series <- df_all_given
 
-all_series <- c(min(df_all_given$S01$SeriesInd):max(df_all_given$S01$SeriesInd))
+
+all_series <- c(min(df_all_series$S01$SeriesInd):max(df_all_series$S01$SeriesInd))
 
 for (i in 1:length(df_all_series)){
   df_temp <- data.frame(SeriesInd = all_series,
@@ -85,3 +95,5 @@ for (i in 1:length(df_all_series)){
 
 
 ```
+
+
