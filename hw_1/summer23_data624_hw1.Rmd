@@ -327,17 +327,7 @@ The first forecast is `r f1` with a 95% margin of error plus or minus `r me`.
 
 ```{r 7.1b_table}
 library(dplyr)
-labels_7.1b <- c("My Results", "R")
-my_pigs <- c(f1-me, f1+me)
-R_pigs <- c(fit_pigs$lower[5], fit_pigs$upper[5])
-df_pigs <- data.frame(my_pigs, R_pigs)
-colnames(df_pigs) <- labels_7.1b
-row.names(df_pigs) <- c("Lower 95% Bound", "Upper 95% Bound")
-df_pigs <- df_pigs %>% mutate(
-  `% Diff` = (`My Results` - R)/R*100
-)
-
-df_pigs %>% t()
+I broke it!
 ```
 
 
