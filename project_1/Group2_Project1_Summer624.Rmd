@@ -42,18 +42,46 @@ head(df, 10) |>
 ```
 
 
-Rather than have all of the data saved in the same dataframe object, called `df`, each separate series was split out into its own dataframe for processing. The split out dataframes were labeled, s01, s02, s03, s04, s05 and s06 and have all of the same columns as the original `df` dataframe. An example of s01 is below. 
+A division was made between what values were given, and what values need to be predicted. Then each separate series was split out into its own object for processing, a preview of S01 is below, and these are all stored as a list in another object. 
 
 ```{r, warning=FALSE, message = FALSE, echo = FALSE}
 library(tidyverse)
-s01 <- df |> filter(category == "S01")
-s02 <- df |> filter(category == "S02")
-s03 <- df |> filter(category == "S03")
-s04 <- df |> filter(category == "S04")
-s05 <- df |> filter(category == "S05")
-s06 <- df |> filter(category == "S06")
 
-head(s01, 5) |>
-  kbl(caption = "s01") |>
+# where given ends and predict starts on next
+break_given_predict <- 43021
+
+df_all_given <- df |> filter(SeriesInd <= break_given_predict)
+df_predict <- df |> filter(SeriesInd > break_given_predict)
+
+df_all_given <- split(df_all_given, f = df$category)
+df_predict <- split(df_predict, f = df$category)
+
+head(df_all_given$S01, 5) |>
+  kbl(caption = "S01") |>
   kable_classic(full_width = F, html_font = "Cambria")
+```
+
+
+```{r}
+
+## Below here is just some code to make NAs provided in original file into Inf 
+## AND make the skipped time seriesInds into NAs just so there is a distinction
+
+# Convert NAs to Inf
+for (i in 1:length(df_all_given)){
+  df_all_given[[i]][is.na( df_all_given[[i]])] <- Inf
+}
+
+# Make the skipped time values NAs
+df_all_series <- df_all_given
+
+all_series <- c(min(df_all_given$S01$SeriesInd):max(df_all_given$S01$SeriesInd))
+
+for (i in 1:length(df_all_series)){
+  df_temp <- data.frame(SeriesInd = all_series,
+                        category = paste0("S0",i))
+  df_all_series[[i]] <- merge(df_all_series[[i]], df_temp, all = TRUE)
+}
+
+
 ```
