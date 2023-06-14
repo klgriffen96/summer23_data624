@@ -27,6 +27,14 @@ The data was provided as an excel (.xls) file. The columns provided were the ser
 ```{r, warning=FALSE, echo = FALSE}
 library(httr)
 library(kableExtra)
+library(fpp2)
+library(imputeTS)
+library(tidyverse)
+
+```
+
+```{r, warning=FALSE, echo = FALSE}
+
 
 github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/project_1/Data%20Set%20for%20Class.xls"
 temp_file <- tempfile(fileext = ".xls")
@@ -45,7 +53,6 @@ head(df, 10) |>
 A division was made between what values were given, and what values need to be predicted. Then each separate series was split out into its own object for processing, a preview of S01 is below, and these are all stored as a list in another object. 
 
 ```{r, warning=FALSE, message = FALSE, echo = FALSE}
-library(tidyverse)
 
 # where given ends and predict starts on next
 break_given_predict <- 43021
@@ -64,23 +71,18 @@ head(df_all_given$S01, 5) |>
 
 ```{r}
 for (i in 1:length(df_all_given)){
+  print(i)
   t <- map(df_all_given[[i]], ~sum(is.na(.)))
   print(t)
 }
 ```
+### Filling in ALL missing SeriesInds and NAS
 
+Try filling in ALL missing values.
 
 ```{r}
 
-## Below here is just some code to make NAs provided in original file into Inf 
-## AND make the skipped time seriesInds into NAs just so there is a distinction
-
 df_all_series <- df_all_given
-
-# Convert NAs to Inf
-for (i in 1:length(df_all_series)){
-  df_all_series[[i]][is.na( df_all_series[[i]])] <- Inf
-}
 
 # Make the skipped time values NAs
 
@@ -93,7 +95,184 @@ for (i in 1:length(df_all_series)){
   df_all_series[[i]] <- merge(df_all_series[[i]], df_temp, all = TRUE)
 }
 
+# for (i in 1:length(df_all_series)){
+#   print(i)
+#   t <- map(df_all_series[[i]], ~sum(is.na(.)))
+#   print(t)
+# }
+```
+
+Make Acf with frequency of 1.
+
+```{r}
+
+
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 1))
+    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_series[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+Make Acf with frequency of 7.
+
+```{r}
+
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 7))
+    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_series[[i]][ii])))
+    print(p)
+  }
+}
 
 ```
 
+Check out the decomposition with frequency of 1. 
+
+```{r}
+
+for (i in 1:length(df_all_given)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_given[[i]][ii]))
+    fit <- ets(time_series)
+    p <- autoplot(fit) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_given[[i]][ii])))
+    print(p)
+  }
+}
+```
+
+Check out the decomposition with frequency of 7. 
+
+
+```{r}
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 7))
+    fit <- ets(time_series)
+    p <- autoplot(fit) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_series[[i]][ii])))
+    print(p)
+  }
+}
+
+
+```
+
+### Filling in SeriesInds so there are cycles of 5 as well as NAs
+
+Make a dataframe with cycles of 5.
+
+```{r}
+all_5s <- list()
+
+for (i in seq(from=min(df_all_given$S01$SeriesInd),to=max(df_all_given$S01$SeriesInd),by=7)){
+  for (ii in 0:6){
+    if (ii < 5){
+      all_5s <- rbind(all_5s, i + ii )
+    }
+  }
+}
+
+all5s <- all_5s[c(1:1681)]
+
+
+df_all_5s <- df_all_given
+
+for (i in 1:length(df_all_5s)){
+  df_temp <- data.frame(SeriesInd = df_all_5s,
+                        category = paste0("S0",i))
+  df_all_series[[i]] <- merge(df_all_5s[[i]], df_temp, all = TRUE)
+}
+```
+
+Make Acf with frequency of 1.
+
+```{r}
+
+for (i in 1:length(df_all_5s)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 1))
+    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+
+Make Acf with frequency of 5.
+
+```{r}
+
+for (i in 1:length(df_all_5s)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 7))
+    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+
+Check out the decomposition with frequency of 1. 
+
+```{r}
+
+for (i in 1:length(df_all_5s)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii]))
+    fit <- ets(time_series)
+    p <- autoplot(fit) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+```
+
+Check out the decomposition with frequency of 5. 
+
+
+```{r}
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 5))
+    fit <- ets(time_series)
+    p <- autoplot(fit) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+
+
+```
+
+
+### Only filling in original NAs no missing Seriesinds
+
+Make Acf with frequency of 1.
+
+```{r}
+
+for (i in 1:length(df_all_given)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_given[[i]][ii], frequency = 7))
+    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_given[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+
+Check out the decomposition with frequency of 1. 
+
+```{r}
+
+for (i in 1:length(df_all_given)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_given[[i]][ii]))
+    fit <- ets(time_series)
+    p <- autoplot(fit) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_given[[i]][ii])))
+    print(p)
+  }
+}
+```
 
