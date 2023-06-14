@@ -3,9 +3,8 @@ title: 'Data 624: Project 1'
 author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
 date: "6/11/2023"
 output:
-  html_document:
-    df_print: paged
-  word_document: default
+  word_document: 
+    toc: true
 always_allow_html: true
 ---
 
@@ -30,6 +29,7 @@ library(kableExtra)
 library(fpp2)
 library(imputeTS)
 library(tidyverse)
+library(urca)
 
 ```
 
@@ -123,7 +123,9 @@ Make Acf with frequency of 7.
 for (i in 1:length(df_all_series)){
   for (ii in 3:7){
     time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 7))
-    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_series[[i]][ii])))
+    p <- ggAcf(time_series) + ggtitle(paste0("ACF Series: ", i, " ", colnames(df_all_series[[i]][ii])))
+    print(p)
+    p <- ggPacf(time_series) + ggtitle(paste0("PACF Series: ", i, " ", colnames(df_all_series[[i]][ii])))
     print(p)
   }
 }
@@ -157,6 +159,30 @@ for (i in 1:length(df_all_series)){
   }
 }
 
+
+```
+```{r}
+
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 7))
+    p <- time_series |> decompose(type="additive") |> autoplot() + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+
+
+```{r}
+for (i in 1:length(df_all_series)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_series[[i]][ii], frequency = 7))
+    print(paste0(colnames(df_all_series[[i]][ii])))
+    print(ndiffs(time_series))
+    print(time_series %>% ur.kpss() %>% summary())
+  }
+}
 
 ```
 
@@ -207,8 +233,10 @@ Make Acf with frequency of 5.
 
 for (i in 1:length(df_all_5s)){
   for (ii in 3:7){
-    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 7))
-    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 5))
+    p <- ggAcf(time_series) + ggtitle(paste0("ACF Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+    p <- ggAcf(time_series) + ggtitle(paste0("PACF Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
     print(p)
   }
 }
@@ -233,7 +261,7 @@ Check out the decomposition with frequency of 5.
 
 
 ```{r}
-for (i in 1:length(df_all_series)){
+for (i in 1:length(df_all_5s)){
   for (ii in 3:7){
     time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 5))
     fit <- ets(time_series)
@@ -245,6 +273,32 @@ for (i in 1:length(df_all_series)){
 
 ```
 
+```{r}
+
+for (i in 1:length(df_all_5s)){
+  for (ii in 3:7){
+    time_series <- na_interpolation(ts(df_all_5s[[i]][ii], frequency = 5))
+    p <- time_series |> decompose(type="additive") |> autoplot() + ggtitle(paste0("Series: ", i, " ", colnames(df_all_5s[[i]][ii])))
+    print(p)
+  }
+}
+
+```
+
+
+```{r}
+for (i in 1:length(df_all_5s)){
+  for (ii in 3:7){
+    time_series <- na_locf(ts(df_all_5s[[i]][ii], frequency = 5))
+    print(paste0(colnames(df_all_5s[[i]][ii])))
+    print(ndiffs(time_series))
+    print(time_series %>% ur.kpss() %>% summary())
+  }
+}
+
+```
+
+
 
 ### Only filling in original NAs no missing Seriesinds
 
@@ -254,8 +308,10 @@ Make Acf with frequency of 1.
 
 for (i in 1:length(df_all_given)){
   for (ii in 3:7){
-    time_series <- na_interpolation(ts(df_all_given[[i]][ii], frequency = 7))
-    p <- ggAcf(time_series) + ggtitle(paste0("Series: ", i, " ", colnames(df_all_given[[i]][ii])))
+    time_series <- na_interpolation(ts(df_all_given[[i]][ii], frequency = 1))
+    p <- ggAcf(time_series) + ggtitle(paste0("ACF Series: ", i, " ", colnames(df_all_given[[i]][ii])))
+    print(p)
+    p <- ggPacf(time_series) + ggtitle(paste0("PACF Series: ", i, " ", colnames(df_all_given[[i]][ii])))
     print(p)
   }
 }
@@ -275,6 +331,22 @@ for (i in 1:length(df_all_given)){
   }
 }
 ```
+
+
+
+```{r}
+for (i in 1:length(df_all_given)){
+  for (ii in 3:7){
+    time_series <- na_locf(ts(df_all_given[[i]][ii], frequency = 1))
+    print(paste0(colnames(df_all_given[[i]][ii])))
+    print(ndiffs(time_series))
+    print(time_series %>% ur.kpss() %>% summary())
+  }
+}
+
+```
+
+## Check sequences
 
 ```{r}
 temp <- df_all_given$S01$SeriesInd[1]-1
