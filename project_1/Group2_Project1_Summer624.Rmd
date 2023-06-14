@@ -277,7 +277,7 @@ for (i in 1:length(df_all_given)){
 ```
 
 ```{r}
-temp <- df_all_given$S01$SeriesInd[1]
+temp <- df_all_given$S01$SeriesInd[1]-1
 
 count_5s <- 0
 count_4s <- 0
@@ -285,12 +285,11 @@ count_3s <- 0
 count_2s <- 0
 count_1s <- 0 
 
-count <- 1
+count <- 0
 
-for (i in 2:length(df_all_given$S01$SeriesInd)){
+for (i in 1:length(df_all_given$S01$SeriesInd)){
   if (df_all_given$S01$SeriesInd[i] == (temp + 1)){
     count <- count + 1
-    print(count)
   } else {
     if (count == 5){
       count_5s <- count_5s+ 1 
@@ -298,10 +297,54 @@ for (i in 2:length(df_all_given$S01$SeriesInd)){
       count_4s <- count_4s+ 1 
     } else if (count == 3){
       count_3s <- count_3s+ 1 
+    } else if (count == 2){
+      count_2s <- count_2s+ 1
+    } else if (count == 1){
+      count_1s <- count_1s+ 1
     }
     count <- 1
   }
+  if (i == length(df_all_given$S01$SeriesInd)){
+    if (count == 5){
+      count_5s <- count_5s+ 1 
+    } else if (count == 4){
+      count_4s <- count_4s+ 1 
+    } else if (count == 3){
+      count_3s <- count_3s+ 1 
+    } else if (count == 2){
+      count_2s <- count_2s+ 1
+    } else if (count == 1){
+      count_1s <- count_1s+ 1
+    }
+  }
   temp <- df_all_given$S01$SeriesInd[i]
 }
+
+paste0("5s: ", count_5s, "  4s: ", count_4s, "  3s: ", count_3s, "  2s: ", count_2s, "  1s: ", count_1s)
+count_5s*5 + count_4s*4 + count_3s*3 + count_2s*2 + count_1s
+```
+
+
+```{r}
+temp <- df_all_given$S01$SeriesInd[1]-1
+
+
+all_counts <- list(rep(0, length(df_all_given$S01$SeriesInd)))
+count <- 0
+
+for (i in 1:length(df_all_given$S01$SeriesInd)){
+  if (df_all_given$S01$SeriesInd[i] == (temp + 1)){
+    count <- count + 1
+  } else {
+    all_counts[[1]][count] <- all_counts[[1]][count] + 1
+    count <- 1
+  }
+  if (i == length(df_all_given$S01$SeriesInd)){
+    all_counts[[1]][count] <- all_counts[[1]][count] + 1
+  }
+  temp <- df_all_given$S01$SeriesInd[i]
+}
+
+all_counts
 
 ```
