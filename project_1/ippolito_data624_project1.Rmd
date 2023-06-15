@@ -238,6 +238,8 @@ tstmp %>%
 
 ```
 
+## Gap analysis
+
 ```{r}
 
 # Look for patterns in gaps in SeriesInd; first make a copy of df == dfga (gap analysis).
@@ -257,6 +259,8 @@ dfga %>%
     kable_classic(full_width = F)
 
 ```
+
+## Outlier analysis
 
 ```{r fig.width=11, fig.height=8}
 
@@ -290,6 +294,8 @@ for (i in seq(1, 6)) {
 }
     
 ```
+
+## Interpolation
 
 ```{r fig.width=11, fig.height=8}
 
@@ -333,7 +339,7 @@ for(i in seq(1, 6)) {
 
 ```
 
-```{r}
+```{r fig.width=11, fig.height=8}
 
 # Compare remainder plots pre- and post-outlier/NA interpolation
 for (i in seq(1, 6)) {
