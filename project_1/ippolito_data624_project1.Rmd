@@ -79,10 +79,6 @@ fcvars <- list(c(1, 2), c(2, 3), c(5, 7), c(1, 2), c(2, 3), c(5,7))
 # To work with the data more easily, initialize list to hold dataframes, one for each category
 dfcat = list()
 
-# Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
-ts1 = list()
-ts2 = list()
-
 # Filter by category, selecting only those vars we're interested in for that category
 for (i in seq(1, 6)) {
     dfcat[[i]] <- df2 %>%
@@ -108,11 +104,6 @@ for (i in seq(1, 6)) {
         gaps <- sum(is.na(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])]))
         inf_vals <- sum(is.infinite(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])]))
         total_vals <- length(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])])
-        #print(paste0('category S0', i, ', Var0', fcvars[[i]][j], ': '))
-        #print(paste0('    ', inf_vals, ' missing values of ', 
-        #             total_vals, ' (', round(100 * inf_vals / total_vals, 2), '%)'))
-        #print(paste0('    ', gaps, ' gaps in SeriesInd of ', 
-        #             total_vals, ' (', round(100 * gaps / total_vals, 2), '%)'))
         dfmv <- rbind(dfmv, c(paste0('S0', i), paste0('Var0', fcvars[[i]][j]), inf_vals, gaps))
     }
 }
@@ -128,6 +119,10 @@ dfmv %>%
 ```{r fig.width=11, fig.height=5}
 
 # First pass: Ignore missing values in time series, just use consecutive values
+
+# Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
+ts1 = list()
+ts2 = list()
 
 # Set start date to first date in series
 start_date <- df2$SeriesInd[[1]]
@@ -177,6 +172,10 @@ for (i in seq(1, 6)) {
 
 # Second pass: Account for gaps using xts
 
+# Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
+xts1 = list()
+xts2 = list()
+
 # Iterate over categories
 for (i in seq(1, 6)) {
     
@@ -191,11 +190,11 @@ for (i in seq(1, 6)) {
         filter(!is.infinite(eval(sym(varname2))))
     
     # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
-    ts1[[i]] <- xts(dftmp1[varname1], order.by=as.Date(dftmp1$SeriesInd, origin='1900-01-01'))
-    ts2[[i]] <- xts(dftmp2[varname2], order.by=as.Date(dftmp2$SeriesInd, origin='1900-01-01'))
+    xts1[[i]] <- xts(dftmp1[varname1], order.by=as.Date(dftmp1$SeriesInd, origin='1900-01-01'))
+    xts2[[i]] <- xts(dftmp2[varname2], order.by=as.Date(dftmp2$SeriesInd, origin='1900-01-01'))
 
     # Plot the time series
-    p1a <- ts1[[i]] %>%
+    p1a <- xts1[[i]] %>%
         autoplot() +
         ggtitle(paste0('Category S0', i, ', ', varname1)) +
         ylab(varname1)
@@ -206,7 +205,7 @@ for (i in seq(1, 6)) {
         ggtitle(paste0('Category S0', i, ', ', varname1)) +
         xlab(varname1)
     grid.arrange(p1a, p1b, ncol=2)
-    p2a <- ts2[[i]] %>%
+    p2a <- xts2[[i]] %>%
         autoplot() +
         ggtitle(paste0('Category S0', i, ', ', varname2)) +
         ylab(varname2)
@@ -290,4 +289,74 @@ for (i in seq(1, 6)) {
     
 }
     
+```
+
+```{r fig.width=11, fig.height=8}
+
+# Create new ts objects that will have imputed values
+tsnew1 <- list()
+tsnew2 <- list()
+
+for(i in seq(1, 6)) {
+    
+    # Create var names for the two variables we're interested in for this category
+    varname1 <- paste0('Var0', fcvars[[i]][1])
+    varname2 <- paste0('Var0', fcvars[[i]][2])
+    
+    # Convert Infs to NAs
+    dftmp <- dfcat[[i]]
+    print(paste0("    changing ", sum(is.infinite(dftmp[[varname1]])), " infinite values to NA for ", varname1))
+    print(paste0("    changing ", sum(is.infinite(dftmp[[varname2]])), " infinite values to NA for ", varname2))
+    dftmp[varname1] = ifelse(is.infinite(dftmp[[varname1]]), NA, dftmp[[varname1]])
+    dftmp[varname2] = ifelse(is.infinite(dftmp[[varname2]]), NA, dftmp[[varname2]])
+
+    # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
+    tsnew1[[i]] <- ts(dftmp[varname1], frequency=7, start=start_date)
+    tsnew2[[i]] <- ts(dftmp[varname2], frequency=7, start=start_date)
+
+    # Replace missing values
+    tsnew1[[i]] <- tsnew1[[i]] %>%
+        tsclean(replace.missing=T)
+    tsnew2[[i]] <- tsnew2[[i]] %>%
+        tsclean(replace.missing=T)
+
+    # Decomp plots
+    p1 <- tsnew1[[i]] %>%
+        decompose(type='additive') %>%
+        autoplot()
+    p2 <- tsnew2[[i]] %>%
+        decompose(type='additive') %>%
+        autoplot()
+    grid.arrange(p1, p2, ncol=1, nrow=2)
+
+}
+
+```
+
+```{r}
+
+# Compare remainder plots pre- and post-outlier/NA interpolation
+for (i in seq(1, 6)) {
+
+    # Pre-interpolation
+    p1 <- (ts1[[i]] %>% decompose(type='additive'))$random %>%
+        autoplot() +
+        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
+    p2 <- (ts2[[i]] %>% decompose(type='additive'))$random %>%
+        autoplot() +
+        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+    
+    # Post-interpolation
+    p3 <- (tsnew1[[i]] %>% decompose(type='additive'))$random %>%
+        autoplot() +
+        ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
+    p4 <- (tsnew2[[i]] %>% decompose(type='additive'))$random %>%
+        autoplot() +
+        ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+    
+    # Arrange plot
+    grid.arrange(p1, p3, p2, p4, ncol=1, nrow=4)
+
+}
+
 ```
