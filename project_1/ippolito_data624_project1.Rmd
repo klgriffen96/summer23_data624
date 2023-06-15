@@ -261,6 +261,7 @@ dfga %>%
 
 ```{r fig.width=11, fig.height=8}
 
+# Look for outliers using decomposition plots
 for (i in seq(1, 6)) {
 
     # Create var names for the two variables we're interested in for this category
