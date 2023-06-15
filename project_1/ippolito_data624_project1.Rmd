@@ -1,0 +1,292 @@
+---
+title: "ippolito_data624_project1"
+author: "Michael Ippolito"
+date: "2023-06-10"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(fpp2)
+library(httr)         # To download the excel data from git
+library(gridExtra)    # To arrange ggplots in a grid
+library(xts)
+library(kableExtra)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## Load data
+
+```{r}
+
+# Load data from git
+GET('https://github.com/klgriffen96/summer23_data624/raw/main/project_1/Data%20Set%20for%20Class.xls', write_disk(tmpfile <- tempfile(fileext=".xls")))
+df_orig <- readxl::read_excel(tmpfile, skip=0)
+
+```
+## Data wrangling
+
+```{r}
+
+# Remove blank observations at end
+df <- df_orig %>%
+    filter(SeriesInd <= 43021) %>%
+    arrange(SeriesInd, category)
+
+# Initial summary
+summary(df)
+
+# Fill in the existing NAs with Infs so we can distinguish them later
+df[is.na(df)] <- Inf
+
+# The next steps create a complete series of data, filling in gaps in SeriesInd across all categories
+
+# Create a sequence of values starting at the first value of SeriesInd and ending at the last
+dftmp2 <- data.frame(SeriesInd=seq(from=min(df$SeriesInd), to=max(df$SeriesInd)))
+
+# Create a tmp dataframe for categories
+dftmp3 <- data.frame(category=c('S01', 'S02', 'S03', 'S04', 'S05', 'S06'))
+
+# Create dataframe joining the complete set of SeriesInd to the categories
+dftmp4 <- dftmp2 %>%
+    merge(dftmp3, all=T) %>%
+    arrange(SeriesInd, category)
+
+# Join the original dataframe with the dataframe containing the full set of SeriesInd and categories
+df2 <- dftmp4 %>%
+    merge(df, by=c('SeriesInd', 'category'), all.x=T) %>%
+    arrange(SeriesInd, category)
+
+# Summary after creating complete dataframe
+summary(df2)
+
+# Define which variables should be forecast for each category
+fcvars <- list(c(1, 2), c(2, 3), c(5, 7), c(1, 2), c(2, 3), c(5,7))
+
+# To work with the data more easily, initialize list to hold dataframes, one for each category
+dfcat = list()
+
+# Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
+ts1 = list()
+ts2 = list()
+
+# Filter by category, selecting only those vars we're interested in for that category
+for (i in seq(1, 6)) {
+    dfcat[[i]] <- df2 %>%
+        filter(category == paste0('S0', i)) %>%
+        select(SeriesInd, !!paste0('Var0', fcvars[[i]][1]), !!paste0('Var0', fcvars[[i]][2]))
+}
+
+```
+
+## Examine missing values
+
+```{r}
+
+# Look for missing values now that we have complete values for SeriesInd
+summary(df2)
+
+# Create df to hold missing value summary
+dfmv <- data.frame(category=c(), var=c())
+
+# Examine missing value count
+for (i in seq(1, 6)) {
+    for (j in seq(1, 2)) {
+        gaps <- sum(is.na(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])]))
+        inf_vals <- sum(is.infinite(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])]))
+        total_vals <- length(df2[df2$category==paste0('S0', i), paste0('Var0', fcvars[[i]][j])])
+        #print(paste0('category S0', i, ', Var0', fcvars[[i]][j], ': '))
+        #print(paste0('    ', inf_vals, ' missing values of ', 
+        #             total_vals, ' (', round(100 * inf_vals / total_vals, 2), '%)'))
+        #print(paste0('    ', gaps, ' gaps in SeriesInd of ', 
+        #             total_vals, ' (', round(100 * gaps / total_vals, 2), '%)'))
+        dfmv <- rbind(dfmv, c(paste0('S0', i), paste0('Var0', fcvars[[i]][j]), inf_vals, gaps))
+    }
+}
+colnames(dfmv) <- c('category', 'var', 'missing.values', 'gaps')
+dfmv %>%
+    kbl(caption='Time series gaps and missing values') %>%
+    kable_classic(full_width=F)
+
+```
+
+## Plot time series (first pass)
+
+```{r fig.width=11, fig.height=5}
+
+# First pass: Ignore missing values in time series, just use consecutive values
+
+# Set start date to first date in series
+start_date <- df2$SeriesInd[[1]]
+
+# Iterate over categories
+for (i in seq(1, 6)) {
+
+    # Create var names for the two variables we're interested in for this category
+    varname1 <- paste0('Var0', fcvars[[i]][1])
+    varname2 <- paste0('Var0', fcvars[[i]][2])
+
+    # Create time series for each variable using ts
+    ts1[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname1] != Inf, varname1], frequency=7, start=start_date)
+    ts2[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname2] != Inf, varname2], frequency=7, start=start_date)
+
+    # Plot the time series
+    p1a <- ts1[[i]] %>%
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', ', varname1)) +
+        ylab(varname1)
+    p1b <- dfcat[[i]] %>%
+        filter(dfcat[[i]][!!varname1] != Inf & !is.na(dfcat[[i]][!!varname1])) %>%
+        ggplot() +
+        geom_histogram(aes(x=eval(sym(varname1))), bins=30) +
+        ggtitle(paste0('Category S0', i, ', ', varname1)) +
+        xlab(varname1)
+    grid.arrange(p1a, p1b, ncol=2)
+    p2a <- ts2[[i]] %>%
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', ', varname2)) +
+        ylab(varname2)
+    p2b <- dfcat[[i]] %>%
+        filter(dfcat[[i]][!!varname2] != Inf & !is.na(dfcat[[i]][!!varname2])) %>%
+        ggplot() +
+        geom_histogram(aes(x=eval(sym(varname2))), bins=30) +
+        ggtitle(paste0('Category S0', i, ', ', varname2)) +
+        xlab(varname2)
+    grid.arrange(p2a, p2b, ncol=2)
+
+}
+
+```
+
+## Plot time series (second pass using xts)
+
+```{r fig.width=11, fig.height=5, warning=F}
+
+# Second pass: Account for gaps using xts
+
+# Iterate over categories
+for (i in seq(1, 6)) {
+    
+    # Create var names for the two variables we're interested in for this category
+    varname1 <- paste0('Var0', fcvars[[i]][1])
+    varname2 <- paste0('Var0', fcvars[[i]][2])
+    
+    # Filter out infinite values
+    dftmp1 <- dfcat[[i]] %>%
+        filter(!is.infinite(eval(sym(varname1))))
+    dftmp2 <- dfcat[[i]] %>%
+        filter(!is.infinite(eval(sym(varname2))))
+    
+    # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
+    ts1[[i]] <- xts(dftmp1[varname1], order.by=as.Date(dftmp1$SeriesInd, origin='1900-01-01'))
+    ts2[[i]] <- xts(dftmp2[varname2], order.by=as.Date(dftmp2$SeriesInd, origin='1900-01-01'))
+
+    # Plot the time series
+    p1a <- ts1[[i]] %>%
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', ', varname1)) +
+        ylab(varname1)
+    p1b <- dfcat[[i]] %>%
+        filter(dfcat[[i]][!!varname1] != Inf & !is.na(dfcat[[i]][!!varname1])) %>%
+        ggplot() +
+        geom_histogram(aes(x=eval(sym(varname1))), bins=30) +
+        ggtitle(paste0('Category S0', i, ', ', varname1)) +
+        xlab(varname1)
+    grid.arrange(p1a, p1b, ncol=2)
+    p2a <- ts2[[i]] %>%
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', ', varname2)) +
+        ylab(varname2)
+    p2b <- dfcat[[i]] %>%
+        filter(dfcat[[i]][!!varname2] != Inf & !is.na(dfcat[[i]][!!varname2])) %>%
+        ggplot() +
+        geom_histogram(aes(x=eval(sym(varname2))), bins=30) +
+        ggtitle(paste0('Category S0', i, ', ', varname2)) +
+        xlab(varname2)
+    grid.arrange(p2a, p2b, ncol=2)
+
+}
+
+```
+
+```{r}
+
+# Graph a small section to show gaps in data
+varname1 <- 'Var01'
+dftmp <- dfcat[[1]] %>%
+    filter(!is.infinite(eval(sym(varname1))))
+
+# Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
+tstmp <- xts(dftmp['Var01'], order.by=as.Date(dftmp$SeriesInd, origin='1900-01-01'))
+
+tstmp %>%
+    autoplot() +
+    xlim(c(as.Date('2012-01-01'), as.Date('2013-01-01'))) +
+    ggtitle('Plot of year 2012, category S01 to show gaps in data')
+
+```
+
+```{r}
+
+# Look for patterns in gaps in SeriesInd; first make a copy of df == dfga (gap analysis).
+# Filter by just a single category since this will give us a single set of SeriesInd values,
+# and the NAs in each category will all be in the same positions so it doesn't matter which category we choose.
+# Work from the theory that these are days of the week, and that that SeriesInd is the number of days since Jan 1, 1900.
+dfga <- df2 %>%
+    filter(category=='S01') %>%
+    mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
+    mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
+    mutate(Day.of.week=weekdays(date)) %>%
+    group_by(SeriesInd.mod7, Day.of.week) %>%
+    summarize(Gaps=sum(is.na(Var01)), Filled.vals=sum(!is.na(Var01)), .groups='keep') %>%
+    arrange(SeriesInd.mod7)
+dfga %>%
+    kbl(caption='Gap analysis') %>%
+    kable_classic(full_width = F)
+
+```
+
+```{r fig.width=11, fig.height=8}
+
+for (i in seq(1, 6)) {
+
+    # Create var names for the two variables we're interested in for this category
+    varname1 <- paste0('Var0', fcvars[[i]][1])
+    varname2 <- paste0('Var0', fcvars[[i]][2])
+    
+    # Filter out infinite values
+    dftmp1 <- dfcat[[i]] %>%
+        filter(!is.infinite(eval(sym(varname1)))) %>%
+        filter(!is.na(eval(sym(varname1))))
+    dftmp2 <- dfcat[[i]] %>%
+        filter(!is.infinite(eval(sym(varname2)))) %>%
+        filter(!is.na(eval(sym(varname2))))
+    
+    # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
+    ts1[[i]] <- ts(dftmp1[varname1], frequency=7, start=start_date)
+    ts2[[i]] <- ts(dftmp2[varname2], frequency=7, start=start_date)
+
+    p1 <- ts1[[i]] %>%
+        decompose(type='additive') %>%
+        autoplot()
+    p2 <- ts2[[i]] %>%
+        decompose(type='additive') %>%
+        autoplot()
+    grid.arrange(p1, p2, ncol=1, nrow=2)
+    
+}
+    
+```
