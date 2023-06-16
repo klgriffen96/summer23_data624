@@ -170,9 +170,9 @@ c(train, test, horizon) %<-% train_test_split(v1, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v1 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s1.v1 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v1 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s1.v1 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -209,7 +209,7 @@ checkresiduals(ets.fit)
 ```{r}
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
-ets.acc <- c(v1 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s1.v1 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
 
@@ -234,7 +234,7 @@ checkresiduals(arima.fc)
 
 ```{r}
 set.seed(123)
-arima.acc <- c(v1 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s1.v1 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
 ```
 
@@ -305,9 +305,9 @@ c(train, test, horizon) %<-% train_test_split(v2, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s1.v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s1.v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -334,7 +334,7 @@ The p-value is far too small to be useful, but we'll make the predictions and st
 ```{r}
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
-ets.acc <- c(v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s1.v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
 
@@ -360,7 +360,7 @@ checkresiduals(arima.fc)
 ```
 ```{r}
 set.seed(123)
-arima.acc <- c(v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s1.v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 arima.acc
 ```
 
@@ -376,7 +376,8 @@ autoplot(train) +
 s1v2.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
 
 cat("\tMAPE results by model - S01\n\n")
-rbind(s1v1.results,s1v2.results)
+s1.results <- rbind(s1v1.results,s1v2.results)
+s1.results
 ```
 
 # S02 
@@ -451,9 +452,9 @@ c(train, test, horizon) %<-% train_test_split(v2, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s2.v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s2.v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -488,7 +489,7 @@ library(stats)
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
 ets.fc <- exp(cumsum(ets.fc$mean))
-ets.acc <- c(v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s2.v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
@@ -515,7 +516,7 @@ arima.fc <- train |>
   auto.arima(lambda=0) |>
   forecast(h=horizon)
 
-arima.acc <- c(v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s2.v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 arima.acc
 ```
 
@@ -595,9 +596,9 @@ c(train, test, horizon) %<-% train_test_split(v3, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v3 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s2.v3 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v3 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s2.v3 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -627,7 +628,7 @@ ets.fit
 ```{r}
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
-ets.acc <- c(v3 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s2.v3 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
@@ -664,7 +665,7 @@ arima.fc <- train |>
 
 ```{r}
 set.seed(123)
-arima.acc <- c(v3 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s2.v3 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 arima.acc
 ```
 
@@ -683,7 +684,8 @@ This model also does not fit the data well.
 ```{r}
 s2v3.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
 cat("\tMAPE results by model - S02\n\n")
-rbind(s2v2.results,s2v3.results)
+s2.results <- rbind(s2v2.results,s2v3.results)
+s2.results
 ```
 
 
@@ -760,9 +762,9 @@ c(train, test, horizon) %<-% train_test_split(v5, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v5 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s3.v5 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v5 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s3.v5 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -790,7 +792,7 @@ ets.fit
 ```{r}
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
-ets.acc <- c(v5 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s3.v5 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
@@ -812,7 +814,7 @@ autoplot(train) +
 ```{r}
 set.seed(123)
 train |>
-  auto.arima(lambda = 0) |>
+  auto.arima() |>
   forecast(h = horizon) |>
   checkresiduals()
 ```
@@ -827,7 +829,7 @@ arima.fc <- train |>
 
 ```{r}
 set.seed(123)
-arima.acc <- c(v5 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s3.v5 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 arima.acc
 ```
 
@@ -903,9 +905,9 @@ c(train, test, horizon) %<-% train_test_split(v7, 0.8)
 ```{r}
 set.seed(123)
 ses.fit <- ses(train, h = horizon)
-ses.acc <- c(v7 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+ses.acc <- c(s3.v7 = accuracy(ses.fit, test)['Test set', 'MAPE'])
 holt.fit <- holt(train, damped=TRUE, h = horizon)
-holt.acc <- c(v7 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+holt.acc <- c(s3.v7 = accuracy(holt.fit, test)['Test set', 'MAPE'])
 cbind(ses = ses.acc, holt = holt.acc)
 ```
 
@@ -933,7 +935,7 @@ ets.fit
 ```{r}
 set.seed(123)
 ets.fc <- forecast(ets.fit, h = horizon)
-ets.acc <- c(v7 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+ets.acc <- c(s3.v7 = accuracy(ets.fc, test)['Test set', 'MAPE'])
 
 cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
 ```
@@ -970,7 +972,7 @@ arima.fc <- train |>
 
 ```{r}
 set.seed(123)
-arima.acc <- c(v7 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc <- c(s3.v7 = accuracy(arima.fc, test)['Test set', 'MAPE'])
 arima.acc
 ```
 
@@ -987,5 +989,908 @@ autoplot(train) +
 ```{r}
 s3v7.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
 cat("\tMAPE results by model - S03\n\n")
-rbind(s3v5.results,s3v7.results)
+s3.results <- rbind(s3v5.results,s3v7.results)
+s3.results
 ```
+
+
+# S04  
+
+```{r}
+par(mfrow = c(1,2))
+
+s4 |>
+  select(c(Var01,Var02)) |>
+  ts() |>
+  autoplot(facets = TRUE, main = "S04") +
+  ylab('')
+
+s4 |>
+  ggplot(aes(x = Var01, y = Var02)) +
+  geom_point()
+```
+
+## Var01     
+
+#### Exploratory Data Analysis
+
+```{r}
+v1 <- ts(s4$Var01)
+ggtsdisplay(v1)
+```
+
+* The data is *non-stationary*. 
+* There is an upward trend over time. 
+* There is some cyclicity, but no discernible seasonality. 
+* The *ACF* plot tails off over time, indicating significance in the autocorrelation and presence of an AR component. The PACF cuts off at lag 1, indicating an AR(1) component. 
+* There are two missing values. 
+* It's not clear from the line plot if any outliers are present. But we can run `tsclean()` to check for any. 
+
+
+```{r}
+gglagplot(v1)
+```
+
+* There is a strong positive correlation from lags 1-9 that decreases slightly as the lags get larger and larger.  
+
+#### Data Preparation 
+
+Dealing with any outliers and missing values, 
+
+```{r}
+v1 <- v1 |>
+  tsclean()
+
+ggtsdisplay(v1)
+```
+
+
+Let's difference the data and see if it achieves stationarity, 
+
+```{r}
+checkresiduals(diff(v1))
+```
+
+We can see the variance increases over time, and the ACF and PACF plots indicate the data is not quite stationary yet. Let's run `ndiffs()` to check the KPSS, 
+
+```{r}
+ndiffs(v1, test = "kpss")
+```
+
+It appears one first differencing is necessary to bring the data to stationarity. We can set aside our training and testing data, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v1, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s4.v1 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s4.v1 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+The Holt test is more effective, although neither capture the nuances of the data, 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s4.v1 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima(lambda = 0) |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima(lambda = 0) |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s4.v1 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+#### Results   
+
+```{r}
+s4v1.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S04\n\n")
+s4v1.results
+```
+
+## Var02   
+
+#### Exploratory Data Analysis
+
+```{r}
+v2 <- ts(s4$Var02)
+ggtsdisplay(v2)
+```
+
+
+* The data is *non-stationary*. 
+* There does appear to be some seasonality. 
+* There are many outliers. 
+* The *ACF* plot exhibits some seasonal behavior. The *PACF* cuts off at lag 4. 
+* There are no missing values.  
+
+```{r}
+gglagplot(v2)
+```
+
+* The data is inversely correlated at each lag. 
+
+#### Data Preparation 
+
+Dealing with any outliers and missing values, 
+
+```{r}
+v2 <- v2 |>
+  tsclean() 
+
+ggtsdisplay(v2)
+```
+
+In this case, setting `lambda = NULL` does a better job removing the outliers. 
+
+Let's difference the data and see if it achieves stationarity, 
+
+```{r}
+checkresiduals(diff(v1))
+```
+
+We can see the variance increases over time, and the ACF and PACF plots indicate the data is stationary. Let's run `ndiffs()` to check the KPSS, 
+
+```{r}
+ndiffs(v2, test = "kpss")
+```
+
+It appears one first differencing is necessary to bring the data to stationarity. We can set aside our training and testing data, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v2, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s4.v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s4.v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+The Holt test is more effective, although neither capture the nuances of the data, 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s4.v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+We can see that the ETS is way off
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima() |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima() |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s4.v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+#### Results   
+
+```{r}
+s4v2.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S04\n\n")
+s4.results <- rbind(s4v1.results,s4v2.results)
+s4.results
+```
+
+# S05  
+
+## Var02
+
+#### Exploratory Data Analysis   
+
+
+```{r}
+v2 <- ts(s5$Var02)
+ggtsdisplay(v2)
+```
+
+* The data is *non-stationary*, although it appears to exhibit periods of stationarity
+* There is no noticeable trend over time. 
+* There appears to be some seasonality. 
+* The *ACF* plot indicates some seasonality. The PACF plot cuts off at lag 3, indicating an AR() component. 
+* There is one missing value. 
+* Many outliers are present. 
+
+```{r}
+gglagplot(v2)
+```
+
+Again we see an inverse correlation within each lag. 
+
+#### Data Preparation 
+
+Dealing with any outliers and missing values, 
+
+```{r}
+v2 <- v2 |>
+  tsclean() 
+
+ggtsdisplay(v2)
+```
+
+
+Now we see the ACF trails off over time, supporting the AR() component indication prior to cleaning the outliers. 
+
+We split the data and prepare for modeling, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v2, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s5.v2 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s5.v2 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+The Holt test is more effective, although neither capture the nuances of the data, 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s5.v2 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+There is no real difference between these three methods in terms of performance. They all have p-values too low to indicate the model is taking into account all the information. 
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima(lambda = 0) |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima(lambda = 0) |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s5.v2 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+#### Results   
+
+```{r}
+s5v2.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S05\n\n")
+s5v2.results
+```
+
+## Var03
+
+#### Exploratory Data Analysis   
+
+
+```{r}
+v3 <- ts(s5$Var03)
+ggtsdisplay(v3)
+```
+
+* The data is *non-stationary*
+* There is no noticeable trend over time. 
+* There appears to be some seasonality. 
+* The *ACF* tails off over time, indicating an AR(). The PACF plot cuts off at lag 1, indicating an AR(1) component. 
+* There are some missing values and maybe one outlier. 
+
+```{r}
+gglagplot(v3)
+```
+
+We see a positive correlation among different lags, strongest at lag 1 and decreasing over time. 
+
+#### Data Preparation 
+
+Dealing with any outliers and missing values, 
+
+```{r}
+v3 <- v3 |>
+  tsclean(lambda = "auto") 
+
+ggtsdisplay(v3)
+```
+
+Missing values have now been imputed and we can observe that the one noticeable outlier has been reduced in magnitude.  
+
+We split the data and prepare for modeling, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v3, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s5.v3 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s5.v3 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+The Holt test is more effective, although neither capture the nuances of the data, 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s5.v3 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+There is no real difference between these three methods in terms of performance. They all have p-values too low to indicate the model is taking into account all the information. 
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima() |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima() |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s5.v3 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+#### Results   
+
+```{r}
+s5v3.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S05\n\n")
+s5.results <- rbind(s5v2.results,s5v3.results)
+s5.results
+```
+
+# S06     
+
+## Var05
+
+
+#### Exploratory Data Analysis   
+
+
+```{r}
+v5 <- ts(s6$Var05)
+ggtsdisplay(v5)
+```
+
+* The data appears *non-stationary*, but it's dramatically affected by outliers
+* There are some missing values.
+* There is an upward trend over time. 
+
+
+The outliers are making it difficult to visually interpret the data. Let's deal with the outlier(s) and reassess
+
+```{r}
+v5 <- v5 |>
+  tsclean() 
+
+ggtsdisplay(v5)
+```
+
+Now we're able to get a much better look at the data. There appears to be some seasonality, a clear upward trend over time. The variance appears constant. We see that the lags are significant over time in the ACF and cut off after lag 2 in the PACF. 
+
+```{r}
+gglagplot(v5)
+```
+
+We see a strong positive correlation at each lag. 
+
+#### Data Preparation 
+
+We split the data and prepare for modeling, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v5, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s6.v5 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s6.v5 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+We see that both the Holt method and Simple Exponential Smoothing seem to be capturing the data fairly well. 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s6.v5 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+There is no real difference between these three methods in terms of performance. The Error, Trend, Seasonal (ETS) model performs the same as the SES model. 
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima() |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima() |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s6.v5 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+#### Results   
+
+```{r}
+s6v5.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S06\n\n")
+s6v5.results
+```
+
+## Var07
+
+#### Exploratory Data Analysis   
+
+
+```{r}
+v7 <- ts(s6$Var07)
+ggtsdisplay(v7)
+```
+
+Much like the previous dataset, one extreme outlier is rendering visualization impossible. Let's deal with that outlier first and then interpret the data, 
+
+```{r}
+v7 <- v7 |>
+  tsclean()
+
+ggtsdisplay(v7)
+```
+
+* The data is *non-stationary*
+* There is an upward trend over time. 
+* There appears to be some seasonality. 
+* The *ACF* stays large over time. The PACF plot cuts off at lag 1, indicating an AR(1) component. 
+* Variance appears to be constant, so there's no need to Box Cox or log transform the data. 
+
+```{r}
+gglagplot(v7)
+```
+
+We see a positive correlation among different lags, strongest at lag 1 and decreasing over time. 
+
+#### Data Preparation 
+
+Since we've already dealt with the outliers we can move on to splitting our training and testing sets.   
+
+We split the data and prepare for modeling, 
+
+```{r}
+c(train, test, horizon) %<-% train_test_split(v7, 0.8)
+```
+
+#### Data Modeling
+
+*Simple Exponential Smoothing* and *Holt's Method*
+
+
+```{r}
+set.seed(123)
+ses.fit <- ses(train, h = horizon)
+ses.acc <- c(s6.v7 = accuracy(ses.fit, test)['Test set', 'MAPE'])
+holt.fit <- holt(train, damped=TRUE, h = horizon)
+holt.acc <- c(s6.v7 = accuracy(holt.fit, test)['Test set', 'MAPE'])
+cbind(ses = ses.acc, holt = holt.acc)
+```
+
+```{r}
+rbind(holt_pval = Box.test(residuals(holt.fit))$p.value,
+      ses_pval = Box.test(residuals(ses.fit))$p.value)
+```
+
+Simple exponential smoothing seems to fit the data well. 
+
+```{r}
+autoplot(train) +
+  autolayer(ses.fit, series = "ses") +
+  autolayer(holt.fit, alpha = 0.4, series = "holt") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ETS Modeling*  
+
+```{r}
+set.seed(123)
+ets.fit <- ets(train)
+ets.fit
+```
+
+```{r}
+set.seed(123)
+ets.fc <- forecast(ets.fit, h = horizon)
+ets.acc <- c(s6.v5 = accuracy(ets.fc, test)['Test set', 'MAPE'])
+
+cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc)
+```
+
+Again, ETS and SES appear to fit the data equally.  
+
+```{r}
+checkresiduals(ets.fc)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ets.fc, series = "ets") + 
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+
+*ARIMA modeling*
+
+```{r}
+set.seed(123)
+train |>
+  auto.arima() |>
+  forecast(h = horizon) |>
+  checkresiduals()
+```
+
+```{r}
+set.seed(123)
+arima.fc <- train |>
+  auto.arima() |>
+  forecast(h=horizon)
+```
+
+
+```{r}
+set.seed(123)
+arima.acc <- c(s6.v5 = accuracy(arima.fc, test)['Test set', 'MAPE'])
+arima.acc
+```
+
+```{r}
+autoplot(train) +
+  autolayer(arima.fc, series = "arima") +
+  autolayer(test, series = "test data") +
+  ylab("")
+```
+
+The arima model does fit the data very well here. 
+
+#### Results   
+
+```{r}
+s6v7.results <- cbind(ses = ses.acc, holt = holt.acc, ets = ets.acc, arima = arima.acc)
+cat("\tMAPE results by model - S05\n\n")
+s6.results <- rbind(s6v5.results,s6v7.results)
+s6.results
+```
+
+
+# Final Results   
+
+```{r}
+final.results <- rbind(s1.results,s2.results,
+                       s3.results,s4.results,
+                       s5.results,s6.results)
+
+final.results
+```
+
