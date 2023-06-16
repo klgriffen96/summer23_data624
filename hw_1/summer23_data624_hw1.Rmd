@@ -9,8 +9,8 @@ output:
 always_allow_html: true
 ---
 
-```{r setup, include=TRUE}
-knitr::opts_chunk$set(echo = FALSE)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 ```
 ## Introduction
 
@@ -25,7 +25,17 @@ This accompanies readings from KJ 1,2 and 3 and HA 1,2,6,7 and 8.
 
 ### HA 2.1
 
-Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
+Using the help function (`?`) to explore what the series `gold`, `woolyrnq` and `gas` represent, we get the following results in the description:
+
+?gold
+ "Daily morning gold prices in US dollars. 1 January 1985 – 31 March 1989"
+ 
+?woolyrnq
+"Quarterly production of woollen yarn in Australia: tonnes. Mar 1965 – Sep 1994"
+ 
+?gas
+Australian monthly gas production: 1956–1995.
+
 
 #### a. Use autoplot() to plot each of these in separate plots.
 
@@ -35,14 +45,6 @@ library(gridExtra)
 library(tidyverse)
 
 
-# ?gold
-# "Daily morning gold prices in US dollars. 1 January 1985 – 31 March 1989"
-# 
-# ?woolyrnq
-# "Quarterly production of woollen yarn in Australia: tonnes. Mar 1965 – Sep 1994"
-# 
-# ?gas
-# "Australian monthly gas production: 1956–1995."
 
 p1 = autoplot(gold) + ggtitle('Price of Gold: 1985-1989') + ylab('price') + xlab('')
 p2 = autoplot(woolyrnq) + ggtitle('Quarterly Production of Woollen Yarn in Australia: 1965 - 1994') + ylab('tonnes') + xlab('')
@@ -105,13 +107,11 @@ myts <- ts(retaildata[,"A3349335T"],
   frequency=12, start=c(1982,4))
 ```
 
-#### c. Explore your chosen retail time series using the following functions:
+#### c. Explore your chosen retail time series using the following functions: `autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`
 
-`autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`
-
+Below we plotted `autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, & ` ggAcf()` in a grid. The lag plot requires a lot of space so it is plotted seperately!
 
 ```{r 2.3}
-
 ap <- autoplot(myts) +
   ggtitle("Autoplot: Monthly retail sales in various categories for different Australian states") +
   xlab("Year") +
@@ -132,8 +132,6 @@ win <- ggAcf(myts_window)
 grid.arrange(ap, sp, gsp, win, ncol=2)
 ```
 
-
-
 ```{r}
 lagged <- gglagplot(myts_window) + 
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
@@ -143,22 +141,24 @@ print(lagged)
 
 #### Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
 
-* We can see from the autoplot that there is a clear, increasing trend, and there is some seasonality. 
+* From the autoplot, we can see from the that there is a clear, increasing trend, as well as seasonality. 
 
-* The lagged scatterplots show that the relationships are strongly positive across all lags, but dramatically positive at lag 12. This indicates a high annual correlation. We can see this in the ACF plot as well. 
+* From the seasonal trend, it is easier to see that that the seasonality has an annual frequency which is additionally following a steady upward trend over time.
 
-* We also notice that the correlation, while remaining positive, becomes less strongly positive as time goes by, and then peaks again every 12 months. 
+* The subseries plot again shows the trend clearly -- within each month there is a steady upward trend that appears to have roughly the same slope every month indicating that the trend is consistent across years.
 
-* The subseries plot shows us that December has the highest average monthly sales and lowest in February, which we can see from the seasonal plot is a trend that is consistent across years.
+* The window plot shows a clear trend (rather than white noise) which indicates that there is strong autocorrelation in the series.
+
+* Finally, the lagged scatterplots show that the relationships are strongly positive across all lags, but dramatically positive at lag 12. This indicates a high annual correlation. We can see this in the ACF plot as well. We also notice that the correlation, while remaining positive, becomes less strongly positive as time goes by, and then peaks again every 12 months, again pointing to the 12 monthly frequency.
 
 
 ### HA 6.2
 
-The plastics data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.
+The `plastics` data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.
 
-(a) Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?
+#### a. Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?
 
-```{r}
+```{r 6.2a}
 # ?plastics
 # "Monthly sales of product A for a plastics manufacturer."
 
@@ -166,21 +166,15 @@ autoplot(plastics) +
   ggtitle("Monthly sales of product A for a plastics manufacturer") +
   xlab("Year") +
   ylab("Sales")
-
-ggseasonplot(plastics, year.labels=TRUE, year.labels.left=TRUE) +
-  ylab("Sales") +
-  ggtitle("Monthly sales of product A for a plastics manufacturer")
-
-ggsubseriesplot(plastics) +
-  ylab("Sales") +
-  ggtitle("Monthly sales of product A for a plastics manufacturer")
 ```
 
-Based on the plots there does appear to be seasonality to the data, the plastic sales are highest May - October (peaking in August usually) and lower November - April (lowest in February). 
+Based on the autoplot there does appear to be seasonality to the data, the plastic sales are highest May - October (peaking in August usually) and lower November - April (lowest in February). There is a consistent upward trend-cycle as well. 
 
-(b) Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
+#### b. Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
 
-```{r}
+We use the `decompose` function with `type="mutliplicative"` and then `autoplot` to decompose the series and then evalaute the results.
+
+```{r 6.2b}
 plastics %>% decompose(type="multiplicative") %>%
   autoplot() + xlab("Year") +
   ggtitle("Classical multiplicative decomposition
@@ -189,14 +183,15 @@ plastics %>% decompose(type="multiplicative") %>%
 
 The trend cycle shows a strong seasonal component, with a yearly frequency, and has an increasing trend up until just past year 5 when it begins decreasing. There is some remainder as well. The remainder values below 1 indicate that there is some “leakage” of the trend-cycle component into the remainder component - the trend-cycle estimate has over-smoothed the drop in data.
 
-(c) Do the results support the graphical interpretation from part a?
+#### c. Do the results support the graphical interpretation from part a?
 
 Yes, the graphical interpretation from part A aligns with the multiplicative decomposition. The yearly seasonal pattern was noted in both a and b. The only part that was not captured well is the drop off in the trend after year 5. 
 
-(d) Compute and plot the seasonally adjusted data.
+#### d. Compute and plot the seasonally adjusted data.
 
+We can compute the seasonally adjusted fit by applying the `seasadj` function to the decomposed time series.
 
-```{r}
+```{r 6.2d, warning=FALSE}
 fit <- plastics %>%
   decompose(type="multiplicative") 
 
@@ -210,60 +205,52 @@ autoplot(plastics, series="Data") +
 
 ```
 
-(e) Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
+#### e. Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
 
-```{r}
+```{r 6.2e, warning=FALSE}
+outlier <- function(n, v, outlier){
+  if(outlier==TRUE){
+    
+    plastics[n] <- v
+    subtitle <- paste("Outlier is", v, "at month", n)
 
-plastics_outlier_1 <- plastics
-plastics_outlier_1[10] <- plastics[10] + 500
+    
+  } else {
+    subtitle <- "Original data"
 
-fit <- plastics_outlier_1 %>%
-  decompose(type="multiplicative") 
-
-autoplot(plastics_outlier_1, series="Data") +
-  autolayer(trendcycle(fit), series="Trend") +
-  autolayer(seasadj(fit), series="Seasonally Adjusted") +
-  xlab("Year") + ylab("Sales") +
-  ggtitle("Monthly sales of product A for a plastics manufacturer") +
-  scale_colour_manual(values=c("gray","blue","red"),
-             breaks=c("Data","Seasonally Adjusted","Trend"))
+  }
+  
+    fit <- plastics %>% decompose(type="multiplicative") 
 
 
-plastics_outlier_1 %>% decompose(type="multiplicative") %>%
-  autoplot() + xlab("Year") +
-  ggtitle("Classical multiplicative decomposition
-    of plastic sales")
-
-```
-
-The effect of the outlier on the seasonally adjusted data is that there is now a peak at the 10th observation, the spike in the data is not accounted for in the moving average trend due to the moving average smoothing out the outlier so it comes through in the seasonally adjusted. You can see however that even though the data went up by 500, the seasonally adjusted only went up by half of that. You can see that some of the difference that the outlier made went into the remainder.
-
-(f) Does it make any difference if the outlier is near the end rather than in the middle of the time series?
-
-```{r}
-#refactor as function
-
-outlier <- function(n, v){
-  plastics_outlier_2 <- plastics
-  plastics_outlier_2[n] <- plastics[n] + v
-
-  fit <- plastics_outlier_2 %>%
-    decompose(type="multiplicative") 
-
-  autoplot(plastics_outlier_2, series="Data") +
-    autolayer(trendcycle(fit), series="Trend") +
+  autoplot(plastics, series="Data") +
     autolayer(seasadj(fit), series="Seasonally Adjusted") +
     xlab("Year") + ylab("Sales") +
-    ggtitle("Monthly sales of product A for a plastics manufacturer") +
-    scale_colour_manual(values=c("gray","blue","red"),
-               breaks=c("Data","Seasonally Adjusted","Trend"))
+    labs(
+      title = "Monthly sales of product A for a plastics manufacturer",
+      subtitle = subtitle
+      ) +
+    scale_colour_manual(values=c("gray","blue"),
+               breaks=c("Data","Seasonally Adjusted","Trend")) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, NA))
+
   
 }
 
-outlier(60,500)
-outlier(30, 500)
+grid.arrange(
+  outlier(1, 1, FALSE),
+  outlier(59, 50, TRUE),
+  outlier(30, 50, TRUE), 
+  ncol=1
+)
 
 ```
+
+The outlier in the middle causes the seasonally adjusted fit to hallucinate seasons that don't exist! At or near the end, there is no discernable effect.
+
+#### f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?
+
+Yes -- the outlier in the middle has a much more pronounced affect than an outlier at the end.
 
 If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.
 
