@@ -1,7 +1,7 @@
 ---
 title: 'Data 624: Predictive Analytics HW 1'
 author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
-date: "5/21/2023"
+date: "6/18/2023"
 output:
   word_document: default
   html_document:
@@ -27,9 +27,9 @@ This accompanies readings from KJ 1,2 and 3 and HA 1,2,6,7 and 8.
 
 Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
 
-Use autoplot() to plot each of these in separate plots.
+#### a. Use autoplot() to plot each of these in separate plots.
 
-```{r, warning = FALSE, message=FALSE}
+```{r 2.1a, warning = FALSE, message=FALSE}
 library(fpp2)
 library(gridExtra)
 library(tidyverse)
@@ -51,27 +51,30 @@ p3 = autoplot(gas) + ggtitle('Australian monthly gas production: 1956-1995') + y
 grid.arrange(p1, p2, p3, nrow=3)
 ```
 
-What is the frequency of each series? Hint: apply the frequency() function.
+#### b. What is the frequency of each series? 
 
-```{r}
-frequency(gold)
+```{r 2.1_frequency}
 
-frequency(woolyrnq)
+Gold <- frequency(gold)
 
-frequency(gas)
+Wool <- frequency(woolyrnq)
 
+Gas <- frequency(gas)
+
+Freqs <- data.frame(
+  Series = c("Gold", "Wool", "Gas"),
+  Frequency = c(Gold, Wool, Gas),
+  Seasonality = c("Daily", "Quaterly", "Monthly")
+  ) 
+Freqs %>% print() 
 ```
 
 Based on `frequency` and the help function you can tell the `gold` observations are taken daily, the `woolyrnq` is quarterly, and the `gas` is monthly.
 
 
-Use which.max() to spot the outlier in the gold series. Which observation was it?
+#### c. Use which.max() to spot the outlier in the gold series. Which observation was it?
 
-```{r}
-which.max(gold)
-```
-
-`which.max` determines the index of the maximum of the numberic vector. This occurs at day 770 in the gold series. We can check what date this is using lubridate.
+`which.max` determines the index of the maximum of the numeric vector. This occurs at day 770 in the gold series. We can check what date this is using `lubridate` package.
 
 ```{r, warning=FALSE, message = FALSE}
 library(lubridate)
@@ -85,101 +88,69 @@ The max price of gold occurred on February 10, 1987.
 
 ### HA 2.3
 
-Download some monthly Australian retail data from the book website (https://otexts.com/fpp2/extrafiles/retail.xlsx). These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+#### a. Download some monthly Australian retail data from the book website (https://otexts.com/fpp2/extrafiles/retail.xlsx). These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
 
-You can read the data into R with the following script:
+Head of the downdloaded dataset is below.
 
-```{r}
-library(httr)
-
-github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/hw_1/retail.xlsx"
-temp_file <- tempfile(fileext = ".xlsx")
-req <- GET(github_link, 
-          # write result to disk
-           write_disk(path = temp_file))
-
-retaildata <- readxl::read_excel(temp_file, skip=1)
+```{r 2.3setup}
+library(readxl)
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+head(retaildata)
 ```
 
-The second argument (skip=1) is required because the Excel sheet has two header rows.
+#### b. Select one of the time series as follows (but replace the column name with your own chosen column):
 
-Select one of the time series as follows (but replace the column name with your own chosen column):
-
-```{r}
-# colnames(retaildata)
-
-# Chose the first column 
-
+```{r 2.3b}
 myts <- ts(retaildata[,"A3349335T"],
   frequency=12, start=c(1982,4))
 ```
 
-Explore your chosen retail time series using the following functions:
+#### c. Explore your chosen retail time series using the following functions:
 
-autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf()
+`autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`
 
-First we will use `autoplot`.
 
-```{r}
-autoplot(myts) +
-  ggtitle("Monthly retail sales in various categories for different Australian states") +
+```{r 2.3}
+
+ap <- autoplot(myts) +
+  ggtitle("Autoplot: Monthly retail sales in various categories for different Australian states") +
   xlab("Year") +
   ylab("Retail Sales")
 
-```
-
-Next we can explore the seasonal trends with `ggseasonplot`.
-
-```{r}
-
-ggseasonplot(myts, year.labels=TRUE, year.labels.left=TRUE) +
+sp <- ggseasonplot(myts, year.labels=TRUE, year.labels.left=TRUE) +
   ylab("Retail Sales") +
   ggtitle("Seasonal plot: Monthly retail sales")
 
-```
-
-We can also use a polar seasonal plot.
-
-```{r}
-
-ggseasonplot(myts, polar = TRUE) +
+gsp <- ggsubseriesplot(myts) +
   ylab("Retail Sales") +
-  ggtitle("Seasonal plot: Monthly retail sales")
+  ggtitle("Subseries Plot: Monthly retail sales")
 
-```
-Next we can explore `ggsubseriesplot` which shows the seasonal patterns where the data for each season are collected together.
-
-```{r}
-
-ggsubseriesplot(myts) +
-  ylab("Retail Sales") +
-  ggtitle("Monthly retail sales")
-
-```
-
-Next we can explore `gglagplot` which shows us lagged values of the time series
-
-```{r}
 myts_window <- window(myts, start = c(1982, 4))
-gglagplot(myts_window) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+win <- ggAcf(myts_window)
 
+
+grid.arrange(ap, sp, gsp, win, ncol=2)
 ```
 
-The colors indicate the month of the variable on the vertical axis. The lines connect points in chronological order. The relationship is strongly positive, reflecting the strong seasonality in the data. 
 
-Next with `ggAcf` we can examine the linear relationship between lagged values of a time series.
 
 ```{r}
-ggAcf(myts_window)
-
+lagged <- gglagplot(myts_window) + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  ggtitle("Lag Plot")
+print(lagged)
 ```
 
+#### Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
 
-According to the book, the dashed blue lines indicate whether the correlations are significantly different from zero and when data are seasonal, the autocorrelations will be larger for the seasonal lags (at multiples of the seasonal frequency) than for other lags. You can tell based on this that there is a monthly autocorrelation.
+* We can see from the autoplot that there is a clear, increasing trend, and there is some seasonality. 
 
-Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+* The lagged scatterplots show that the relationships are strongly positive across all lags, but dramatically positive at lag 12. This indicates a high annual correlation. We can see this in the ACF plot as well. 
 
-According to the book, "seasonality is always of a fixed and known frequency" and "a cycle occurs when the data exhibit rises and falls that are not of a fixed frequency". The retail sales are constantly increasing and in addition to this there does appear to be seasonality, monthly, where each month peaks or troughs across all of the years. For example for each year December is a high sales month and February is a low sales month.
+* We also notice that the correlation, while remaining positive, becomes less strongly positive as time goes by, and then peaks again every 12 months. 
+
+* The subseries plot shows us that December has the highest average monthly sales and lowest in February, which we can see from the seasonal plot is a trend that is consistent across years.
+
 
 ### HA 6.2
 
