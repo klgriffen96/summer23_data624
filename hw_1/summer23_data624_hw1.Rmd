@@ -10,7 +10,7 @@ always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
 ```
 ## Introduction
 
@@ -246,7 +246,7 @@ grid.arrange(
 
 ```
 
-The outlier in the middle causes the seasonally adjusted fit to hallucinate seasons that don't exist! At or near the end, there is no discernable effect.
+The outlier in the middle causes the seasonally adjusted fit to hallucinate seasons that don't exist! At or near the end, there is no discernible effect.
 
 #### f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?
 
@@ -260,8 +260,7 @@ If the outlier is at the end vs in the middle, there is more of an effect on the
 
 Consider the `pigs` series -- the number of pigs slaughtered in Victoria each month.
 
-### 7.1 a 
-Use the `ses` function to find the optimal levels of alpha and l-zero, and generate forecasts for the next 4 months.
+### 7.1 a Use the `ses` function to find the optimal levels of alpha and l-zero, and generate forecasts for the next 4 months.
 
 ```{r 7.1a}
 fit_pigs <- pigs %>% ses(h=4)
@@ -270,18 +269,26 @@ fit_pigs %>% autoplot()
 
 summary(fit_pigs)
 ```
+By callng `summary` on the results of the `ses` object, we can see that the optimal values of alpha and l-zero are 0.2971 and 77260.0561, respectively.
 
-### 7.1 b
- Compute a 95% prediction interval for the first forecast using y-hat is plus or minus 1.96s where `s` is the standard deviation of the residuals. Compare your interval with the interval produced by R.
+The first four predicted values are given by calling the `mean` operator on the `summary` object, as shown below. 
+
+```{r 7.1aforecasts}
+summary(fit_pigs)$mean
+```
+
+### 7.1 b Compute a 95% prediction interval for the first forecast using y-hat is plus or minus 1.96s where `s` is the standard deviation of the residuals. Compare your interval with the interval produced by R.
 ```{r 7.1b}
+# margin of error
 me <- 1.96*sd(fit_pigs$residuals)
 
+# first forecast
 f1 <- fit_pigs$mean[1]
 
 
 ```
 
-The first forecast is `r f1` with a 95% margin of error plus or minus `r me`. 
+The first forecast from the `ses` prediction on pigs is `r round(f1, 2)` with a 95% margin of error plus or minus `r round(me, 2)`. A comparison to results from R is shown below. The results are within 1/10 of 1% from the manually calculated values.
 
 ```{r 7.1b_table}
 library(dplyr)
@@ -292,7 +299,7 @@ df_pigs <- data.frame(my_pigs, R_pigs)
 colnames(df_pigs) <- labels_7.1b
 row.names(df_pigs) <- c("Lower 95% Bound", "Upper 95% Bound")
 df_pigs <- df_pigs %>% mutate(
-  `% Diff` = (`My Results` - R)/R*100
+  `% Diff` = round((`My Results` - R)/R*100,2)
 )
 
 df_pigs %>% t()
@@ -300,14 +307,14 @@ df_pigs %>% t()
 
 
 ### HA 7.3
-(In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.)
 
-Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
+#### Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
 
-There is not difference depending on the level for moderate values of alpha, but for small alpha it does make a difference.
+Note: In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.
 
-```{r 7.2}
+```{r 7.2, include=FALSE, eval=FALSE}
 T <- length(pigs) %>% as.numeric()
+
 my_smooth <- function(y, alpha, level) {
   
   T <- length(y) %>% as.numeric()
@@ -317,8 +324,6 @@ my_smooth <- function(y, alpha, level) {
   #set first value 
   my_fitted[1] <- level
 
-    # I really wish we could do this wihout a for loop!!!
-    # Also I don't understand why this doesn't have the exponential or summation??
     for (i in 2:(T+1)) {
     my_fitted[i] <- alpha * y[i-1] + (1 - alpha) * my_fitted[i-1]
   }
@@ -339,29 +344,76 @@ ses(pigs, alpha=alpha)$mean[1]
 
 ```
 
-```{r 7.3sse}
-my_sse <- function(y, alpha, level) {
-  
-  y_hats <- my_smooth(y, alpha, level)
-  resid <- y_hats - y
-  sse <- mapply(function(x) x^2, resid) %>% sum()
+The optim() function using the default method (Nelder and Mead) produced different values for α and $ℓ_0$ (0.5179980 and 0.1307012, respectively). Changing the method to BFGS (Broyden, Fletcher, Goldfarb and Shanno) made the results very close to the one produced by the ses() function (0.297142 and 77273.160331, respectively).
 
-  return(sse)
+```{r}
+# Function to implement SES, modified to return the sum of squared errors instead of the forecast of the next observation
+my_ses_mod <- function(y, params) {
+
+    # Split out parameters for optim() function    
+    alpha <- params[1]
+    level <- params[2]
+    
+    # Initialize vector to store forecast values
+    fitted <- c()
+    fitted[1] <- level
+    
+    # Set T to be length of time series
+    T <- length(y)
+    
+    # Iterate over terms
+    for (j in seq(2, T)) {
+        fitted[j] <- alpha * (y[j - 1]) + (1 - alpha) * fitted[j - 1]
+    }
+    
+    # Convert fitted values to time series
+    fitted <- ts(fitted, frequency=12, start=c(1980, 1))
+    
+    # Calculate residuals
+    residuals <- y - fitted
+    
+    # Calculate sum of squared errors
+    sse=sum(residuals ** 2)
+
+    # Return fitted values, residuals, and sum of squared errors
+    # Return sse
+    return(sse)
 
 }
+
+# Calculate SSE using modified custom function
+fit2 <- my_ses_mod(pigs, c(0.2971, 77260.0561))
+
+# Compare this SSE to SSE from original fit using sse()
+
+ans7.1b <- data_frame(
+  MyFit = c(fit2),
+  sesFit = c(sum(fit_pigs$residuals ** 2))
+)
+
+ans7.1b <- ans7.1b %>% 
+  mutate(
+  `% Diff` = round((MyFit - sesFit)/sesFit*100 , 2)
+)
+
+print(ans7.1b)
+
+# Optimize α and ℓ_0 using optim() function
+fit3 <- optim(par=c(0, 0), fn=my_ses_mod, y=pigs)
+fit3$par  # produces alpha=0.5179980, l_0=0.1307012
+
+# Try optimize again using method='BFGS'
+fit4 <- optim(par=c(0, 0), fn=my_ses_mod, y=pigs, method='BFGS')
+fit4$par
+
+
 ```
 
-Then use the `optim` function to find the optimal methods of alpha and l-0. 
- ## NOT DONE!
-```{r 7.3optim}
-
-```
 
 ## KJ 3.1
 ```{r 3.1}
 library(mlbench)
 data(Glass)
-str(Glass)
 ```
 
 ### 3.1a
@@ -369,43 +421,260 @@ Using visualizations, explore the predictor variables to understand their distri
 
 ```{r 3.1a_pLots, message=FALSE, warning=FALSE}
 
-Glass %>% select(-Type) %>% gather() %>% ggplot(aes(value)) + geom_histogram() + facet_wrap(~key, scales = "free")
+# Gather
+Glass_long <- Glass %>% select(-Type) %>% gather() 
 
-Glass %>% select(-Type) %>% gather() %>% ggplot(aes(value)) + geom_boxplot() + facet_wrap(~key, scales = "free")
+# Hist plots
+Glass_long %>% ggplot(aes(value)) + geom_histogram() + facet_wrap(~key, scales = "free")
 
+# Box plots
+Glass_long %>% ggplot(aes(y=value))+geom_boxplot()+facet_wrap(~key, scales = "free")
+  
 ```
 
-```{r 3.1a_targetPLots}
-Glass %>% gather("key", "value", -Type) %>% 
-  ggplot(aes(factor(Type), value)) + 
-  geom_boxplot() + 
-  facet_wrap(~key, scales = "free") 
-
-```
+A colorized correlation plot is used to understand relationships between predictors.
 
 ```{r 3.1a_corrPLots}
-# Added from Michael's
-
+library(corrplot)
+library(caret)
 # Filter for just quantitative vars
 glassQuant <- Glass %>% select (-Type)
 
+glasscorr <- cor(glassQuant)
 # Corr chart
-chart.Correlation(glassQuant)
+corrplot(cor(glasscorr), method="number", order = "AOE", type = "lower", diag = FALSE)
+
+# Find correlations past cutoff
+print(paste0("Candidate for removal due to high correlation: ", findCorrelation(glasscorr, cutoff=0.8, exact=T, verbose=T, names=T)))
 ```
 
-### 3.1b
-Do there appear to be any outliers? Are any predictors skewed?
+There is some collinearity between `RI` and `Ca`. There is some correlation between a few of the other variables: `RI` and `Si`, `Mg` and `AI`, and `Ba` and `AI`.
+
+The RI-Ca correlation is the only one to take particular note of, as it could impact the types of modeling sensitive to those effect (e.g. linear models). Using the heuristic algorithm proposed by K&J (and using the `findCorrelation()` function), calcium is a candidate for removal due to high correlation. 
+
+All variables except Type are quantitative; Type is a categorical variable with 6 levels (1, 2, 3, 5, 6, and 7).
+
+### 3.1b Do there appear to be any outliers? Are any predictors skewed?
+
+As we observed from the histograms, all of the predictors are skewed to some degree, but the worst offenders are `Mg`, which appears to be bimodal, and `K`, `Ba`, and `Fe`, which appear to be right-skewed. We can confirm this by using the `skewness` function:
 
 ```{r 3.1b}
 library(psych)
-describe(Glass)
-
+describe(Glass) %>% select(skew)
 ```
+
+As far as outliers, let's take a look the boxplots above. There are a lot of outliers present (greater than 1.5X outside the interquartile range) in each predictor with the exception of `Mg`.
 
 ## KJ 3.2
 
+### KJ 3.2 (a)
 
+The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
 
-```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+**Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?**
+
+Using the nearZeroVar() function, these variables appear to be degenerate as described in K&J as having near-zero variance:
+
+* leaf.mild
+* mycelium
+* sclerotia
+
+As shown in the summary output, each of these columns has a dominant class that far exceeds its next most populous class.
+
+```{r}
+
+# Load data
+data(Soybean)
+str(Soybean)
+
+# Generate frequency tables to look for degenerate distributions
+multifunc2 <- function(x) {
+    return(prop.table(table(x)))
+}
+#apply(Soybean, 2, table)  # freq table - produces long output; use nzv instead
+#apply(Soybean, 2, multifunc2)  # proportion table - produces long output; use nzv instead
+
+# Degenerate vars: if both of these are true:
+# 1. fraction of unique vals over the sample size < 10%
+# 2. ratio of freq of the most prevalent to the freq of the second most prevalent is > 20
+nzv <- nearZeroVar(Soybean)
+print(colnames(Soybean[,nzv]))
+
+# Examine NZV columns
+summary(Soybean[,nzv])
+
 ```
+
+### KJ 3.2 (b)
+
+**Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?**
+
+As shown in the md.pattern plot below, there are 562 (of 683) complete cases, or roughly 82% of the data. Of the 18% of the data that have over 15% missing values, most of the variables are related to plant pathology:
+
+* hail
+* sever
+* seed.tmt
+* germ
+* leaf.mild
+* lodging
+* fruiting.bodies
+* fruit.spots
+* seed.discolor
+
+We verified that the missing values weren't due to the absence of the specific pathology, as negative cases were also reported. So the values do appear to be missing as opposed to being intentionally or structurally absent.
+
+```{r fig.width=9, fig.height=6}
+
+# Look for missing values
+summary(Soybean)
+
+# Select columns where % of missing values > 15%
+over15missing <- (colMeans(is.na(Soybean)) * 100) > 15
+print("Vars with over 15% of data missing:")
+colMeans(is.na(Soybean[,over15missing])) * 100
+
+# Generate plots of soybean class vs variables with missing values > 15%
+par(mfrow=c(3,4))
+for (i in seq(1, length(over15missing))) {
+    if (over15missing[i] == T) {
+        plot(x=Soybean[,i], xlab=colnames(Soybean[i]))
+    }
+}
+mtext("Soybean class vs variables with proportion of missing values > 15%", outer=T, line=-2)
+
+```
+
+```{r fig.width=11, fig.height=8, warning=F}
+library(ggcorrplot)
+# Generate ggcorrplot correlating missing values and soybean class:
+# Make a new vector containing column names of variables with missing values > 15%;
+# also include the outcome variable, soybean class.
+class_and_over15 <- over15missing  
+class_and_over15[1] <- T
+
+# Convert to a model matrix, then generate correlations and the correlation plot
+model.matrix(~.+0, data=Soybean[,class_and_over15]) %>%
+  cor(use="pairwise.complete.obs") %>%
+  ggcorrplot(show.diag=FALSE, type="lower", lab=TRUE, lab_size=2)
+
+```
+
+```{r fig.width=11, fig.height=8}
+library(mice)
+# Generate missing data pattern plot; blue=observed, red=missing.
+# Row labels at left give the number of times that pattern occurs.
+# Row labels at right give the number of columns with missing values (i.e., the number of red cells).
+# Totals along the bottom are the number of missing values in each variable.
+md.pattern(Soybean, rotate.names=T, plot=T)
+
+```
+
+### KJ 3.2 (c)
+
+**Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
+
+As shown in the md.pattern plot above, there are several patterns that are of immediate concern due to the fact that over half of the variables are missing; these observations are candidates for removal:
+
+* one observation has 30 variables missing
+* 15 observations have 28 variables missing
+* 14 observations have 24 variables missing
+* 8 observations have 20 variables missing
+* 55 observations have 19 variables missing
+
+Using this strategy, 86.4% of the original observations are retained, leaving 4.7% of the remaining rows having at least one missing value.
+
+```{r}
+
+# Create copy of the original data set
+sb2 <- Soybean
+
+# Remove the observations in which 19 or more variables have missing values
+most_complete <- rowSums(is.na(sb2)) < 19
+sb2 <- sb2[most_complete,]
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb2)) > 0
+print(paste0("Proportion of observations with missing values after removing those with high proportion of missing variables: ", 
+    round(nrow(sb2[some_missing,]) / nrow(sb2), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb2) / nrow(Soybean), 3)))
+
+```
+
+An alternative approach would be to remove the three variables with degenerate classes:
+
+* leaf.mild
+* mycelium
+* sclerotia
+
+and to additionally remove those with a high proportion of data:
+
+* hail
+* sever
+* seed.tmt
+* germ
+* leaf.mild (also degenerate)
+* lodging
+* fruiting.bodies
+* fruit.spots
+* seed.discolor
+
+However, that still leaves 17.7% of observations with at least one missing value. So a combination of removing some observations along with the above variables would be more effective. The disadvantage of this is that 11 variables would be removed--a full 30% of all variables.
+
+```{r}
+
+# Create copy of original data set
+sb3 <- Soybean
+
+# Remove the observations in which 24 or more variables have missing values
+most_complete <- rowSums(is.na(sb3)) < 24
+sb3 <- sb3[most_complete,]
+
+# Remove variables with degenerate classes or having high proportion of missing values (11 all together)
+sb3 <- sb3 %>%
+    select(-leaf.mild, -mycelium, -sclerotia, -hail, -sever, -seed.tmt, -germ, -lodging, -fruiting.bodies, -fruit.spots, -seed.discolor)
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb3)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb3[some_missing,]) / nrow(sb3), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb3) / nrow(Soybean), 3)))
+
+```
+
+Another approach would be to impute the missing data. The MICE package (multivariate imputation by chained equations) is an appropriate way to do this. Even using MICE, the observations with over 24 variables missing would seem to remain problematic, so we'll remove those first before imputing. As shown below, we now have a dataset with no missing cases, and over 95% of the original observations were retained.
+
+```{r warning=FALSE}
+
+# Create copy of original data set
+sb4 <- Soybean
+
+# Remove the observations in which 24 or more variables have missing values
+most_complete <- rowSums(is.na(sb4)) < 24
+sb4 <- sb4[most_complete,]
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb4)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb4[some_missing,]) / nrow(sb4), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb4) / nrow(Soybean), 3)))
+
+# Impute missing data
+imp <- mice(sb4, maxit=5, m=5, seed=777)
+
+# Complete the data set using imputed values
+sb4 <- complete(imp)
+
+# Recalculate number of rows contain missing values
+some_missing <- rowSums(is.na(sb4)) > 0
+print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+    round(nrow(sb4[some_missing,]) / nrow(sb4), 3)))
+print(paste0("Proportion of observations retained from original data set: ",
+    round(nrow(sb4) / nrow(Soybean), 3)))
+
+```
+
+
 
