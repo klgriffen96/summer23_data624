@@ -207,22 +207,25 @@ autoplot(plastics, series="Data") +
 
 #### e. Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
 
+Our approach is to create a funciton that allows us to quickly check different outliers and positions, then compare several outputs to the original seasonally adjusted plot.
+
 ```{r 6.2e, warning=FALSE}
+
+#Function that creates plots based on the position (n) value (v) and whether it's an outlier or not (outlier)
 outlier <- function(n, v, outlier){
+  
+  # if it's an ourlier, add the outlier and change the plot subtitle
   if(outlier==TRUE){
-    
     plastics[n] <- v
     subtitle <- paste("Outlier is", v, "at month", n)
-
-    
   } else {
     subtitle <- "Original data"
-
   }
   
-    fit <- plastics %>% decompose(type="multiplicative") 
-
-
+  #fit to the decomp
+  fit <- plastics %>% decompose(type="multiplicative") 
+  
+  #plot
   autoplot(plastics, series="Data") +
     autolayer(seasadj(fit), series="Seasonally Adjusted") +
     xlab("Year") + ylab("Sales") +
@@ -237,12 +240,12 @@ outlier <- function(n, v, outlier){
   
 }
 
+# plot the original and two variations in a grid
 grid.arrange(
   outlier(1, 1, FALSE),
   outlier(59, 50, TRUE),
   outlier(30, 50, TRUE), 
-  ncol=1
-)
+  ncol=1)
 
 ```
 
@@ -256,9 +259,7 @@ If the outlier is at the end vs in the middle, there is more of an effect on the
 
 ## Week 2 Homework Solutions
 
-### HA 7.1
-
-Consider the `pigs` series -- the number of pigs slaughtered in Victoria each month.
+### HA 7.1 Consider the `pigs` series -- the number of pigs slaughtered in Victoria each month.
 
 ### 7.1 a Use the `ses` function to find the optimal levels of alpha and l-zero, and generate forecasts for the next 4 months.
 
@@ -267,7 +268,7 @@ fit_pigs <- pigs %>% ses(h=4)
 
 fit_pigs %>% autoplot()
 
-summary(fit_pigs)
+#summary(fit_pigs)
 ```
 By callng `summary` on the results of the `ses` object, we can see that the optimal values of alpha and l-zero are 0.2971 and 77260.0561, respectively.
 
@@ -278,24 +279,27 @@ summary(fit_pigs)$mean
 ```
 
 ### 7.1 b Compute a 95% prediction interval for the first forecast using y-hat is plus or minus 1.96s where `s` is the standard deviation of the residuals. Compare your interval with the interval produced by R.
+
 ```{r 7.1b}
 # margin of error
 me <- 1.96*sd(fit_pigs$residuals)
 
 # first forecast
 f1 <- fit_pigs$mean[1]
-
-
 ```
 
 The first forecast from the `ses` prediction on pigs is `r round(f1, 2)` with a 95% margin of error plus or minus `r round(me, 2)`. A comparison to results from R is shown below. The results are within 1/10 of 1% from the manually calculated values.
 
 ```{r 7.1b_table}
 library(dplyr)
+
+#Make a table to review results
 labels_7.1b <- c("My Results", "R")
-my_pigs <- c(f1-me, f1+me)
-R_pigs <- c(fit_pigs$lower[5], fit_pigs$upper[5])
-df_pigs <- data.frame(my_pigs, R_pigs)
+
+df_pigs <- data.frame(
+  c(f1-me, f1+me), 
+  c(fit_pigs$lower[5], fit_pigs$upper[5]))
+
 colnames(df_pigs) <- labels_7.1b
 row.names(df_pigs) <- c("Lower 95% Bound", "Upper 95% Bound")
 df_pigs <- df_pigs %>% mutate(
@@ -485,20 +489,18 @@ As shown in the summary output, each of these columns has a dominant class that 
 
 # Load data
 data(Soybean)
-str(Soybean)
+#str(Soybean)
 
 # Generate frequency tables to look for degenerate distributions
 multifunc2 <- function(x) {
     return(prop.table(table(x)))
 }
-#apply(Soybean, 2, table)  # freq table - produces long output; use nzv instead
-#apply(Soybean, 2, multifunc2)  # proportion table - produces long output; use nzv instead
 
 # Degenerate vars: if both of these are true:
 # 1. fraction of unique vals over the sample size < 10%
 # 2. ratio of freq of the most prevalent to the freq of the second most prevalent is > 20
 nzv <- nearZeroVar(Soybean)
-print(colnames(Soybean[,nzv]))
+#print(colnames(Soybean[,nzv]))
 
 # Examine NZV columns
 summary(Soybean[,nzv])
@@ -523,68 +525,42 @@ As shown in the md.pattern plot below, there are 562 (of 683) complete cases, or
 
 We verified that the missing values weren't due to the absence of the specific pathology, as negative cases were also reported. So the values do appear to be missing as opposed to being intentionally or structurally absent.
 
-```{r fig.width=9, fig.height=6}
+```{r fig.width=6, fig.height=6}
+col_sums = colSums(is.na(Soybean))
 
-# Look for missing values
-summary(Soybean)
-
-# Select columns where % of missing values > 15%
-over15missing <- (colMeans(is.na(Soybean)) * 100) > 15
-print("Vars with over 15% of data missing:")
-colMeans(is.na(Soybean[,over15missing])) * 100
-
-# Generate plots of soybean class vs variables with missing values > 15%
-par(mfrow=c(3,4))
-for (i in seq(1, length(over15missing))) {
-    if (over15missing[i] == T) {
-        plot(x=Soybean[,i], xlab=colnames(Soybean[i]))
-    }
-}
-mtext("Soybean class vs variables with proportion of missing values > 15%", outer=T, line=-2)
+data.frame(variable = names(col_sums), missing = col_sums, row.names = NULL) |> 
+  ggplot(aes(y=reorder(variable,missing), x=missing)) +
+  geom_col() +
+  ggtitle('Missing Values') + xlab('') + ylab('')
 
 ```
 
-```{r fig.width=11, fig.height=8, warning=F}
-library(ggcorrplot)
-# Generate ggcorrplot correlating missing values and soybean class:
-# Make a new vector containing column names of variables with missing values > 15%;
-# also include the outcome variable, soybean class.
-class_and_over15 <- over15missing  
-class_and_over15[1] <- T
+We see a bunch of predictors with more than 80 NAs, related to seed (`seed.tmt`,`seed.size`,`seed.discolor`,`seed`), leaf information (`leaf.size`,`leaf.shread`,`leaf.mild`,`leaf.marg`,`leaf.malf`,`leaf.halo`), fruit (`fruiting.bodies`,`fruit.spots`,`fruit.pods`), and a few others that are not of a clear category (`shriveling`,`sever`,`mold.growth`,`lodging`,`hail`,`germ`).
 
-# Convert to a model matrix, then generate correlations and the correlation plot
-model.matrix(~.+0, data=Soybean[,class_and_over15]) %>%
-  cor(use="pairwise.complete.obs") %>%
-  ggcorrplot(show.diag=FALSE, type="lower", lab=TRUE, lab_size=2)
+Checking to see how these NAs relate by class:
 
+```{r}
+Soybean |>
+  group_by(class = Class) |>
+  summarize(total_na = sum(is.na(across(-Class))),
+            pct_na=sum(is.na(across(-Class)))
+            / n()) |>
+  arrange(desc(pct_na))
 ```
 
-```{r fig.width=11, fig.height=8}
-library(mice)
-# Generate missing data pattern plot; blue=observed, red=missing.
-# Row labels at left give the number of times that pattern occurs.
-# Row labels at right give the number of columns with missing values (i.e., the number of red cells).
-# Totals along the bottom are the number of missing values in each variable.
-md.pattern(Soybean, rotate.names=T, plot=T)
-
-```
+We see that five of the 19 classes are responsible for all of the NAs. This indicates to me a likelihood that certain measurements are either applicable or not available to these classes. This should be taken into consideration when considering how to deal with these missing values.
 
 ### KJ 3.2 (c)
 
 **Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
 
-As shown in the md.pattern plot above, there are several patterns that are of immediate concern due to the fact that over half of the variables are missing; these observations are candidates for removal:
+The degenerate values should be removed as they offer no predictive value.
 
-* one observation has 30 variables missing
-* 15 observations have 28 variables missing
-* 14 observations have 24 variables missing
-* 8 observations have 20 variables missing
-* 55 observations have 19 variables missing
+Because NA values only appear in 5 of the 14 classes, missingness is potentially informative in predicting a class. Two ways to deal with this while retaining the predictive value of the missingness is to **1)** create an **indicator variable** that represents the presence or absence of missing values in a specific variable, or **2)** create a **missingness pattern variable** that indicates whether a specific combination of variables is missing or not.
 
-Using this strategy, 86.4% of the original observations are retained, leaving 4.7% of the remaining rows having at least one missing value.
+It's also possible to apply pattern-based imputation using the `mice` or `amelia` packages in R.
 
 ```{r}
-
 # Create copy of the original data set
 sb2 <- Soybean
 
@@ -677,4 +653,21 @@ print(paste0("Proportion of observations retained from original data set: ",
 ```
 
 
+## Week 3 Homeowork Solutions
 
+### Plot forecasts from an ARIMA(0,2,1) model with no constant.
+
+This is done by adjusting the `include.constant` argument in `Arima`.
+
+```{r}
+
+# Remove the MA term, i.e., model ARIMA(0,0,0) with constant
+fit8 <- Arima(austa, order=c(0,2,1), include.constant=F)
+summary(fit8)
+
+# Plot forecasts
+fit8 %>%
+    forecast(h=10) %>%
+    autoplot()
+
+```
