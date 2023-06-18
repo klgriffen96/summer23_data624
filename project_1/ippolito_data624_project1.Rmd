@@ -37,7 +37,7 @@ GET('https://github.com/klgriffen96/summer23_data624/raw/main/project_1/Data%20S
 df_orig <- readxl::read_excel(tmpfile, skip=0)
 
 ```
-## Data wrangling
+## Data preparation
 
 ```{r}
 
@@ -114,7 +114,9 @@ dfmv %>%
 
 ```
 
-## Plot time series (first pass)
+## Exploratory data analysis
+
+### Plot time series (first pass)
 
 ```{r fig.width=11, fig.height=5}
 
@@ -166,7 +168,7 @@ for (i in seq(1, 6)) {
 
 ```
 
-## Plot time series (second pass using xts)
+### Plot time series (second pass using xts)
 
 ```{r fig.width=11, fig.height=5, warning=F}
 
@@ -238,7 +240,7 @@ tstmp %>%
 
 ```
 
-## Gap analysis
+### Gap analysis
 
 ```{r}
 
@@ -260,7 +262,81 @@ dfga %>%
 
 ```
 
-## Outlier analysis
+### Scatterplot matrix
+
+```{r warning=F}
+
+# Look for correlation between variables
+GGally::ggpairs(df2[,3:7], progress=F)
+
+```
+
+### ACF/PACF plots
+
+```{r}
+
+# ACF/PACF plots - needed for ARIMA modeling
+for (i in seq(1, 6)) {
+
+    p1 <- ts1[[i]] %>%
+        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
+    p2 <- ts2[[i]] %>%
+        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
+    p1
+    p2
+}
+
+
+```
+
+### Lag plots
+
+```{r fig.width=11, fig.height=8}
+
+for (i in seq(1, 6)) {
+    
+    #i <- 1
+    #ts1[[i]] %>%
+    #    ggseasonplot(period='year')
+    
+    p1 <- ts1[[i]] %>%
+        gglagplot() +
+        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][1]))
+    p2 <- ts2[[i]] %>%
+        gglagplot() +
+        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][1]))
+    grid.arrange(p1, p2, ncol=2, nrow=1)
+    
+}
+
+```
+
+### Seasonal subseries plots
+
+```{r fig.width=11, fig.height=4}
+
+for (i in seq(1, 6)) {
+    
+    p1 <- ts1[[i]] %>%
+        ggsubseriesplot()
+    p2 <- ts2[[i]] %>%
+        ggsubseriesplot()
+    grid.arrange(p1, p2, ncol=2, nrow=1)
+
+}
+
+```
+
+```{r}
+
+    i < - 1
+    ts1[[i]] %>%
+        ggseasonplot(period='year')
+
+```
+
+
+### Outlier analysis
 
 ```{r fig.width=11, fig.height=8}
 
@@ -285,10 +361,12 @@ for (i in seq(1, 6)) {
 
     p1 <- ts1[[i]] %>%
         decompose(type='additive') %>%
-        autoplot()
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
     p2 <- ts2[[i]] %>%
         decompose(type='additive') %>%
-        autoplot()
+        autoplot() +
+        ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
     grid.arrange(p1, p2, ncol=1, nrow=2)
     
 }
@@ -296,6 +374,8 @@ for (i in seq(1, 6)) {
 ```
 
 ## Interpolation
+
+### Impute missing values and outliers
 
 ```{r fig.width=11, fig.height=8}
 
@@ -339,30 +419,154 @@ for(i in seq(1, 6)) {
 
 ```
 
+### Compare plots pre- and post-interpolation
+
 ```{r fig.width=11, fig.height=8}
 
-# Compare remainder plots pre- and post-outlier/NA interpolation
+# Compare plots of pre- and post-interpolation
 for (i in seq(1, 6)) {
 
-    # Pre-interpolation
-    p1 <- (ts1[[i]] %>% decompose(type='additive'))$random %>%
+    # First var
+    p1 <- (ts1[[i]] %>% decompose(type='additive')) %>%
         autoplot() +
         ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
-    p2 <- (ts2[[i]] %>% decompose(type='additive'))$random %>%
-        autoplot() +
-        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
-    
-    # Post-interpolation
-    p3 <- (tsnew1[[i]] %>% decompose(type='additive'))$random %>%
+    p2 <- (tsnew1[[i]] %>% decompose(type='additive')) %>%
         autoplot() +
         ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
-    p4 <- (tsnew2[[i]] %>% decompose(type='additive'))$random %>%
+    grid.arrange(p1, p2, ncol=1, nrow=2)
+    
+    # Second var
+    p3 <- (ts2[[i]] %>% decompose(type='additive')) %>%
+        autoplot() +
+        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+    p4 <- (tsnew2[[i]] %>% decompose(type='additive')) %>%
         autoplot() +
         ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
-    
-    # Arrange plot
-    grid.arrange(p1, p3, p2, p4, ncol=1, nrow=4)
+    grid.arrange(p3, p4, ncol=1, nrow=2)
 
+}
+
+```
+
+## Modeling
+
+```{r}
+
+# Prepare data frame for results
+dfr <- data.frame(matrix(nrow=0, ncol=11))
+colnames(dfr) <- c('category', 'var', 'model', 'method', 'ME', 'RMSE', 'MAE', 'MPE', 'MAPE', 'MASE', 'ACF1')
+
+```
+
+
+### Exponential smoothing
+
+```{r}
+
+# Create list to store ETS fit
+fit_ets1 <- list()
+fit_ets2 <- list()
+
+# ETS
+for (i in seq(1, 6)) {
+    
+    fit_ets1[[i]] <- ets(tsnew1[[i]])
+    dfr <- rbind(dfr, data.frame(
+        category=paste0('S0', i), 
+        var=paste0('V0', fcvars[[i]][1]), 
+        model='ETS', 
+        method=fit_ets1[[i]]$method, 
+        accuracy(fit_ets1[[i]])))
+    fit_ets2[[i]] <- ets(tsnew2[[i]])
+    dfr <- rbind(dfr, data.frame(
+        category=paste0('S0', i), 
+        var=paste0('V0', fcvars[[i]][1]), 
+        model='ETS', 
+        method=fit_ets2[[i]]$method,
+        accuracy(fit_ets2[[i]])))
+    
+}
+
+# Display results
+dfr %>%
+    kbl(caption='ETS Modeling Results') %>%
+    kable_classic(full_width=F)
+
+```
+
+```{r}
+
+# Display residual plots
+for (i in seq(1, 6)) {
+    fit_ets1[[i]] %>%
+        checkresiduals()
+    fit_ets2[[i]] %>%
+        checkresiduals()
+}
+
+```
+
+### ARIMA modeling
+
+```{r}
+
+# Create list to store ETS fit
+fit_arima1 <- list()
+fit_arima2 <- list()
+
+# Function to return friendly name of ARIMA method using the fit returned by the model
+ret_arima_name <- function (fit) {
+    tmp_name <- paste0(
+        'ARIMA(', fit$arma[1], 
+        ',', fit$arma[6],
+        ',', fit$arma[2],
+        ')(', fit$arma[3],
+        ',',  fit$arma[7],
+        ',',  fit$arma[4]
+    )
+    if ('drift' %in% names(fit$coef)) {
+        tmp_name <- paste(tmp_name, 'with drift')
+    }
+    return(tmp_name)
+}
+
+# ARIMA modeling
+for (i in seq(1, 6)) {
+    
+    fit_arima1[[i]] <- auto.arima(tsnew1[[i]])
+    dfr <- rbind(dfr, data.frame(
+        category=paste0('S0', i), 
+        var=paste0('V0', fcvars[[i]][1]), 
+        model='ARIMA', 
+        method=ret_arima_name(fit_arima1[[i]]), 
+        accuracy(fit_arima1[[i]])))
+    fit_arima2[[i]] <- auto.arima(tsnew2[[i]])
+    dfr <- rbind(dfr, data.frame(
+        category=paste0('S0', i), 
+        var=paste0('V0', fcvars[[i]][1]), 
+        model='ARIMA', 
+        method=ret_arima_name(fit_arima2[[i]]),
+        accuracy(fit_arima1[[i]])))
+    
+}
+
+# Display results
+dfr %>%
+    kbl(caption='Modeling Results') %>%
+    kable_classic(full_width=F)
+
+```
+
+### Check residuals
+
+```{r}
+
+# Display residual plots
+for (i in seq(1, 6)) {
+    fit_arima1[[i]] %>%
+        checkresiduals()
+    fit_arima2[[i]] %>%
+        checkresiduals()
 }
 
 ```
