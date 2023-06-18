@@ -257,7 +257,6 @@ results_df # %>% flextable()
 ```
 ## Forecast
 
-
 ```{r forecasts}
 SeriesInd <- df_long$SeriesInd %>% unique()
 
