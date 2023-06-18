@@ -18,11 +18,12 @@ output:
 knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
 library(tidyverse)
 library(fpp2)
-library(httr)         # To download the excel data from git
-library(gridExtra)    # To arrange ggplots in a grid
 library(xts)
 library(kableExtra)
+library(httr)         # To download the excel data from git
+library(gridExtra)    # To arrange ggplots in a grid
 library(urca)         # For KPSS unit-root testing
+library(openxlsx)     # To write multi-tab Excel files
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -412,9 +413,9 @@ for(i in seq(1, 6)) {
 
     # Replace missing values
     tsnew1[[i]] <- tsnew1[[i]] %>%
-        tsclean(replace.missing=T)
+        tsclean(replace.missing=T, lambda='auto')
     tsnew2[[i]] <- tsnew2[[i]] %>%
-        tsclean(replace.missing=T)
+        tsclean(replace.missing=T, lambda='auto')
 
     if (the_freq > 1) {
         
@@ -432,8 +433,6 @@ for(i in seq(1, 6)) {
 }
 
 ```
-
-
 
 ```{r fig.width=8, fig.height=4}
 
@@ -932,5 +931,8 @@ dffc %>%
 
 # Write forecasts
 
+#reference: https://www.statology.org/r-export-to-excel-multiple-sheets/
+#export each data frame to separate sheets in same Excel file
+#openxlsx::write.xlsx(forecasts, file = 'mydata.xlsx')
 
 ```
