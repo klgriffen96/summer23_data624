@@ -711,8 +711,8 @@ dfdiffs %>%
 # Prepare data frame for results
 #dfr <- data.frame(matrix(nrow=0, ncol=11))
 #colnames(dfr) <- c('category', 'var', 'model', 'method', 'ME', 'RMSE', 'MAE', 'MPE', 'MAPE', 'MASE', 'ACF1')
-dfr <- data.frame(matrix(nrow=0, ncol=5))
-colnames(dfr) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE')
+dfr <- data.frame(matrix(nrow=0, ncol=6))
+colnames(dfr) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE', 'Ljung.Box')
 
 ```
 
@@ -734,7 +734,9 @@ for (i in seq(1, 6)) {
         Variable=paste0('V0', fcvars[[i]][1]), 
         Model='ETS', 
         Method=fit_ets1[[i]]$method, 
-        MAPE=accuracy(fit_ets1[[i]])[5]))
+        MAPE=accuracy(fit_ets1[[i]])[5],
+        Ljung.Box=0  # temp, will fill in later when calculating residuals
+    ))
     
     # Second variable in category i
     fit_ets2[[i]] <- ets(tsnew2[[i]])
@@ -743,7 +745,9 @@ for (i in seq(1, 6)) {
         Variable=paste0('V0', fcvars[[i]][2]), 
         Model='ETS', 
         Method=fit_ets2[[i]]$method,
-        MAPE=accuracy(fit_ets2[[i]])[5]))
+        MAPE=accuracy(fit_ets2[[i]])[5],
+        Ljung.Box=0  # temp, will fill in later when calculating residuals
+    ))
     
 }
 
@@ -753,10 +757,10 @@ for (i in seq(1, 6)) {
 
 # Display residual plots
 for (i in seq(1, 6)) {
-    fit_ets1[[i]] %>%
-        checkresiduals()
-    fit_ets2[[i]] %>%
-        checkresiduals()
+    tmp_res <- checkresiduals(fit_ets1[[i]])
+    dfr[i * 2 - 1, 'Ljung.Box'] <- tmp_res$p.value
+    tmp_res <- checkresiduals(fit_ets2[[i]])
+    dfr[i * 2, 'Ljung.Box'] <- tmp_res$p.value
 }
 
 ```
@@ -806,14 +810,18 @@ for (i in seq(1, 6)) {
         Variable=paste0('V0', fcvars[[i]][1]), 
         Model='ARIMA', 
         Method=ret_arima_name(fit_arima1[[i]]), 
-        MAPE=accuracy(fit_arima1[[i]])[5]))
+        MAPE=accuracy(fit_arima1[[i]])[5],
+        Ljung.Box=0  # temp, will fill in later when calculating residuals
+    ))
     fit_arima2[[i]] <- auto.arima(tsnew2[[i]])
     dfr <- rbind(dfr, data.frame(
         Category=paste0('S0', i), 
         Variable=paste0('V0', fcvars[[i]][2]), 
         Model='ARIMA', 
         Method=ret_arima_name(fit_arima2[[i]]),
-        MAPE=accuracy(fit_arima1[[i]])[5]))
+        MAPE=accuracy(fit_arima1[[i]])[5],
+        Ljung.Box=0  # temp, will fill in later when calculating residuals
+    ))
     
 }
 
@@ -824,10 +832,10 @@ for (i in seq(1, 6)) {
 
 # Display residual plots
 for (i in seq(1, 6)) {
-    fit_arima1[[i]] %>%
-        checkresiduals()
-    fit_arima2[[i]] %>%
-        checkresiduals()
+    tmp_res <- checkresiduals(fit_arima1[[i]])
+    dfr[i * 2 - 1 + 12, 'Ljung.Box'] <- tmp_res$p.value
+    tmp_res <- checkresiduals(fit_arima2[[i]])
+    dfr[i * 2 + 12, 'Ljung.Box'] <- tmp_res$p.value
 }
 
 ```
@@ -850,9 +858,10 @@ dfr %>%
 
 # Choose the model with the lower MAPE for each category/var combination
 dfr2 <- dfr %>%
+    #filter(Ljung.Box > 0.05) %>%
     group_by(Category, Variable) %>%
     slice_min(MAPE)
-colnames(dfr2) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE')
+colnames(dfr2) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE', 'Ljung.Box')
 dfr2 %>%
     kbl(caption='Best-performing models') %>%
     kable_classic(full_width=F)
