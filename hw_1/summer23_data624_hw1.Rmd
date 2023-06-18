@@ -3,9 +3,9 @@ title: 'Data 624: Predictive Analytics HW 1'
 author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
 date: "6/18/2023"
 output:
-  word_document: default
   html_document:
     df_print: paged
+  word_document: default
 always_allow_html: true
 ---
 
@@ -141,9 +141,9 @@ print(lagged)
 
 #### Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
 
-* From the autoplot, we can see from the that there is a clear, increasing trend, as well as seasonality. 
+* From the autoplot, we can see that there is a clear, increasing trend, as well as seasonality. 
 
-* From the seasonal trend, it is easier to see that that the seasonality has an annual frequency which is additionally following a steady upward trend over time.
+* From the seasonal trend, it is easier to see that the seasonality has an annual frequency which is additionally following a steady upward trend over time.
 
 * The subseries plot again shows the trend clearly -- within each month there is a steady upward trend that appears to have roughly the same slope every month indicating that the trend is consistent across years.
 
@@ -249,13 +249,11 @@ grid.arrange(
 
 ```
 
-The outlier in the middle causes the seasonally adjusted fit to hallucinate seasons that don't exist! At or near the end, there is no discernible effect.
+The outlier in the middle causes the seasonally adjusted fit to hallucinate seasons that don't exist! At or near the end, there is no discernible effect on the overall seasonally adjusted fit.
 
 #### f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?
 
-Yes -- the outlier in the middle has a much more pronounced affect than an outlier at the end.
-
-If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.
+If the outlier is at the end vs in the middle, there is more of an effect on the seasonally adjusted data. The estimate of the trend cycle is unavailable for the first and last few observations - without this there is also no estimate of the remainder component. Due to this, all of the outlier is passed on to the seasonally adjusted rather than having some of it put in the remainder or in the trend.  If the outlier is in the middle some of the variance is put into the cycle component and causes some "hallucinated" peaks
 
 ## Week 2 Homework Solutions
 
@@ -314,9 +312,9 @@ df_pigs %>% t()
 
 #### Modify your function from the previous exercise to return the sum of the squared errors rather than the forecast of the next observations. The use the `optim` function to find the optimal methods of alpha and l-0. Do you get the same values as the `ses()` function?
 
-Note: In the previous exercise, we we asked to write our own function to implement simple exponential smoothing.
+Note: In the previous exercise, we we asked to write our own function to implement simple exponential smoothing. This is shown below.
 
-```{r 7.2, include=FALSE, eval=FALSE}
+```{r 7.2}
 T <- length(pigs) %>% as.numeric()
 
 my_smooth <- function(y, alpha, level) {
@@ -415,6 +413,16 @@ fit4$par
 
 
 ## KJ 3.1
+
+The UC Irvine Machine Learning Repository6 contains a data set related
+to glass identification. The data consist of 214 glass samples labeled as one
+of seven class categories. There are nine predictors, including the refractive
+index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+The data can be accessed via:
+> library(mlbench)
+> data(Glass)
+> str(Glass)
+
 ```{r 3.1}
 library(mlbench)
 data(Glass)
