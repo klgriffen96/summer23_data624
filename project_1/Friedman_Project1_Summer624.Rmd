@@ -77,7 +77,7 @@ myts <- lapply(split_data[list_vars], function(x) {
     dplyr::select(value) %>% 
     slice(1:1622) %>% #removes the missing values we need to predict
     ts() %>% 
-    tsclean(lambda = "auto") %>%
+    tsclean() %>%
     na_ma() 
 })
 
@@ -106,8 +106,8 @@ grid_arranged_plots <- do.call(grid.arrange, c(plot_list, ncol = 4))
 print(grid_arranged_plots)
 }
 
-plot_grid(myts)
 plot_grid(myts_raw)
+plot_grid(myts)
 ```
 
 Using the function `ndiffs` we can see that each series requires 1 differencing to become stationary.
@@ -132,9 +132,8 @@ back_diff <- function(diff_t, t1){
 ```{r ses_define_func}
 
 # Create a function to test the ses and holt forecasts with test and train data
-ses_test <- function(x, i) {
+ses_test <- function(x, i, log=FALSE) {
   
-
   # Determine the index to split the time series into train and test sets
   split.index <- floor(0.8 * length(x))  # 80% for training, 20% for testing
   
@@ -145,23 +144,43 @@ ses_test <- function(x, i) {
   # Set the horizon
   horizon <- length(test)
   
-  # Ses fit with training data
-  ses.fit <- ses(train, h = horizon)
-  ses.p <- Box.test(residuals(ses.fit))$p.value
-  
-  # Test with test data
-  ses_res <- accuracy(ses.fit, test)['Test set', 'MAPE']
+  ######## FOR LOG TRANSFORMED
+  if(log==TRUE){
+    train <- log(train)
+    # Ses fit with training data
+    ses.fit <- ses(train, h = horizon)$mean %>% 
+      exp() %>% 
+      ts(start=split.index + 1)
 
-  # Holt fit with training data
-  holt.fit <- holt(train, damped = TRUE, h = horizon)
-  holt.p <- Box.test(residuals(holt.fit))$p.value
+    # Test with test data BACKTRANSFORMED
+    ses_res <- accuracy(ses.fit, test)['Test set', 'MAPE']
   
-  # Backtransform fitted and test data, initializing wiht the first value of train
-  holt_fitted <- back_diff(holt.fit$mean, test[1]) %>% ts(start = split.index + 1)
-  # Test with test data
-  holt_res <- accuracy(holt.fit, test)['Test set', 'MAPE']
-  
+    # Holt fit with training data
+    holt.fit <- holt(train, damped = TRUE, h = horizon)$mean %>% 
+      exp() %>% 
+      ts(start=split.index + 1)
 
+    # Test with test data
+    holt_res <- accuracy(holt.fit, test)['Test set', 'MAPE']
+  }
+  
+  
+  ####### NO TRANSFORM
+  else{
+    # Ses fit with training data
+    ses.fit <- ses(train, h = horizon)
+
+    # Test with test data
+    ses_res <- accuracy(ses.fit, test)['Test set', 'MAPE']
+  
+    # Holt fit with training data
+    holt.fit <- holt(train, damped = TRUE, h = horizon)
+
+    # Test with test data
+    holt_res <- accuracy(holt.fit, test)['Test set', 'MAPE']
+  }
+
+  ######################
   # Create a plot
   p <- autoplot(window(x, end=split.index)) +
     autolayer(ses.fit, series = "ses") + #ses forecast
@@ -171,10 +190,8 @@ ses_test <- function(x, i) {
   
   # Return list of results
   result <- list(ses_MAPE = ses_res, #1
-                 ses.p = ses.p, #2
-                 holt_MAPE = holt_res, #3 
-                 holt.p=holt.p #4
-                ) #5
+                 holt_MAPE = holt_res #2
+                )
   
   print(p)
   return(result)
@@ -194,20 +211,19 @@ holt_p <- vector("numeric", length = length(list_vars))
 
 # Run through the function to build the lists
 for (i in seq_along(myts)) {
-  result<- ses_test(myts[[i]], i)
+  result <- ses_test(myts[[i]], i, F)
   ses_MAPE[i] <- result[1]
-  ses_p[i] <- result[2]
-  holt_MAPE[i] <- result[3]
-  holt_p[i] <- result[4]
+  holt_MAPE[i] <- result[2]
 }
 ```
 
 ```{r arima}
 # Create the empty vectors
-arima_MAPE <- vector(mode = "list", length = length(myts))
+arima_MAPE_lambda0 <- vector(mode = "list", length = length(myts))
+arima_MAPE_lambda1 <- vector(mode = "list", length = length(myts))
 
 # Create a function to test the ses and holt forecasts with test and train data
-arima_test <- function(x, i) {
+arima_test <- function(x, i, lambda) {
   
   # Determine the index to split the time series into train and test sets
   split.index <- floor(0.8 * length(x))  # 80% for training, 20% for testing
@@ -221,7 +237,7 @@ arima_test <- function(x, i) {
   
   #auto arima fit
   arima.fc <-  train %>% 
-  auto.arima() %>%
+  auto.arima(lambda = lambda) %>%
   forecast(h=horizon)
   
   # test results
@@ -241,16 +257,18 @@ arima_test <- function(x, i) {
 
 ## Run 
 for (i in seq_along(myts)) {
-  arima_MAPE[i]<- arima_test(myts[[i]], i)
+  arima_MAPE_lambda0[i]<- do.call(arima_test, list(myts[[i]], i, 0))
+  arima_MAPE_lambda1[i]<- do.call(arima_test, list(myts[[i]], i, 1))
 }
 ```
 
 ```{r results_mape}
-results_df <- cbind(
+results_df<- cbind(
   list_vars,
   ses_MAPE,
   holt_MAPE,
-  arima_MAPE
+  arima_MAPE_lambda0,
+  arima_MAPE_lambda1
 )
 # Print the results as a table
 results_df # %>% flextable()
@@ -267,12 +285,41 @@ forecasts <- lapply(myts, function(x){
   cbind(SeriesInd, 
         append(x, ses.fit$mean))
 })
+
+
+
 ```
 
 ```{r export}
+S01 <- merge(forecasts$S01.Var01, forecasts$S01.Var02, by = "SeriesInd")
+names(S01) <- c("SeriesInd", "Var01", "Var02")
+
+S02 <- merge(forecasts$S02.Var02, forecasts$S02.Var03, by = "SeriesInd")
+names(S02) <- c("SeriesInd", "Var02", "Var03")
+
+S03 <- merge(forecasts$S03.Var05, forecasts$S03.Var07, by = "SeriesInd")
+names(S03) <- c("SeriesInd", "Var05", "Var07")
+
+S04 <- merge(forecasts$S04.Var01, forecasts$S04.Var02, by = "SeriesInd")
+names(S04) <- c("SeriesInd", "Var01", "Var02")
+
+S05 <- merge(forecasts$S05.Var02, forecasts$S05.Var03, by = "SeriesInd")
+names(S05) <- c("SeriesInd", "Var02", "Var03")
+
+S06 <- merge(forecasts$S06.Var05, forecasts$S06.Var07, by = "SeriesInd")
+names(S06) <- c("SeriesInd", "Var05", "Var07")
+
+export <- list(
+  S01=S01,
+  S02=S02,
+  S03=S03,
+  S04=S04,
+  S05=S05,
+  S06=S06
+)
 #reference: https://www.statology.org/r-export-to-excel-multiple-sheets/
 #export each data frame to separate sheets in same Excel file
-openxlsx::write.xlsx(forecasts, file = 'group2_forecasts.xlsx') 
+openxlsx::write.xlsx(export, file = 'group2_forecasts.xlsx') 
 ```
 
 ## Appendix 1: R Code
