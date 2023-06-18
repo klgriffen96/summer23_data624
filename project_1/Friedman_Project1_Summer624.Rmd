@@ -39,6 +39,7 @@ library(urca)
 library(ggfortify)
 library(gridExtra)
 library(scales)
+library(flextable)
 set.seed(123)
 
 ```
@@ -53,32 +54,17 @@ req <- GET(github_link,
 df <- readxl::read_excel(temp_file)
 
 head(df, 10) |>
-  kbl(caption = "Series Provided") |>
-  kable_classic(full_width = F, html_font = "Cambria")
+  flextable()
 ```
 
-```{r split_data}
-
-# where given ends and predict starts on next
-break_given_predict <- 43021
-
-df_all_given <- df |> filter(SeriesInd <= break_given_predict)
-df_predict <- df |> filter(SeriesInd > break_given_predict)
-
-df_all_given <- split(df_all_given, f = df$category)
-df_predict <- split(df_predict, f = df$category)
-
-head(df_all_given$S01, 5) |>
-  kbl(caption = "S01") |>
-  kable_classic(full_width = F, html_font = "Cambria")
-```
 
 ```{r slice}
+#Split the data into data frames by category and var name
+
 df_long <- df %>% gather(key, value, -SeriesInd, -category)
 split_data <- split(df_long, f=list(df_long$category, df_long$key))
 
-#Split the data into data frames by category and var name
-split_data
+
 
 #put the combo into a list so it can be run through
 list_vars <- c(
@@ -107,22 +93,14 @@ myts <- lapply(split_data[list_vars], function(x) {
 
 
 ```{r data-exploration}
-
-for (i in 1:length(list_vars)){
-  var <- list_vars[i]
-  ts <- myts[[var]] 
-  
-  plot <- autoplot(ts) +
-      ggtitle(paste("Plot for", var))
-  
-
+lapply(list_vars, function(var) {
+  ts <- myts[[var]]
+  plot <- autoplot(ts) + ggtitle(paste("Plot for", var))
   print(plot)
-}
-
+})
 ```
 
-
-Using the funciton `ndiffs` we can see that each series requries 1 differencing to become stationary.
+Using the function `ndiffs` we can see that each series requires 1 differencing to become stationary.
 
 ```{r test-split}
 test_split <- function(x){
@@ -150,7 +128,7 @@ holt_p <- vector("numeric", length = length(list_vars))
 
 # Create a function to test the ses and holt forecasts with test and train data
 ses_test <- function(x, i) {
-  #ts <- diff(x)
+  ts <- diff(x)
   ts <- x
   # Determine the index to split the time series into train and test sets
   split.index <- floor(0.8 * length(ts))  # 80% for training, 20% for testing
@@ -202,10 +180,6 @@ for (i in seq_along(myts)) {
   holt_p[i] <- result[4]
 }
 
-
-#apply scales::percent for formatting
-SES_MAPE <- lapply(ses_MAPE, function(x) percent(x, scale = 1))
-Holt_MAPE <- lapply(holt_MAPE, function(x) percent(x, scale = 1))
 ```
 
 ```{r arima}
@@ -232,9 +206,12 @@ arima_test <- function(x, i) {
   
   # test results
   result <- accuracy(arima.fc, test)['Test set', 'MAPE']
-
   
-  p <- checkresiduals(arima.fc)
+  #plot residuals
+  #p <- checkresiduals(arima.fc)
+  p <- autoplot(arima.fc) +
+    autolayer(test) +
+    ggtitle(list_vars[i])
 
   print(p)
   
@@ -244,24 +221,43 @@ arima_test <- function(x, i) {
 
 ## Run 
 for (i in seq_along(myts)) {
-  arima_MAPE[i] <- arima_test(myts[[i]], i)
+  arima_MAPE<- arima_test(myts[[i]], i)
 }
-
-Arima_MAPE <- lapply(arima_MAPE, function(x) percent(x, scale = 1))
 ```
 
 ```{r}
 results_df <- cbind(
   list_vars,
-  SES_MAPE,
-  Holt_MAPE,
-  Arima_MAPE
+  ses_MAPE,
+  holt_MAPE,
+  arima_MAPE
 )
-
 # Print the results as a table
-print(results_df, format = "markdown", digits = 2)  %>% 
-  kable()
+results_df # %>% flextable()
 ```
+## Forecast
+
+Because the SES model produces the best result, we will use that for all data tables
+
+```{r forecasts}
+forecasts <- lapply(myts, function(x){
+
+  ses.fit <- ses(x, h = 140)$fitted
+})
+```
+```{r export}
+
+#reference: https://www.statology.org/r-export-to-excel-multiple-sheets/
+library(openxlsx)
+
+
+#export each data frame to separate sheets in same Excel file
+openxlsx::write.xlsx(forecasts, file = 'mydata.xlsx') 
+
+
+```
+
+## Appendix 1: R Code
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
 
 ```
