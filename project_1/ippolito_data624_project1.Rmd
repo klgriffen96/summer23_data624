@@ -877,11 +877,19 @@ dfr %>%
 
 ```{r}
 
+# Manually choose best model for now
+Selected.model <- c(1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0)
+
 # Choose the model with the lower MAPE for each category/var combination
+#dfr2 <- dfr %>%
+#    #filter(Ljung.Box > 0.05) %>%
+#    group_by(Category, Variable) %>%
+#    slice_min(MAPE)
 dfr2 <- dfr %>%
-    #filter(Ljung.Box > 0.05) %>%
-    group_by(Category, Variable) %>%
-    slice_min(MAPE)
+    arrange(Category, Variable, Model) %>%
+    cbind(Selected.model) %>%
+    filter(Selected.model==1) %>%
+    select(-Selected.model)
 colnames(dfr2) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE', 'Ljung.Box')
 dfr2 %>%
     kbl(caption='Best-performing models') %>%
