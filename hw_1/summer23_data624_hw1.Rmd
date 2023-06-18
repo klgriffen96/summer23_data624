@@ -3,9 +3,9 @@ title: 'Data 624: Predictive Analytics HW 1'
 author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
 date: "6/18/2023"
 output:
-  word_document: default
   html_document:
     df_print: paged
+  word_document: default
 always_allow_html: true
 ---
 
@@ -673,8 +673,6 @@ Figure 8.31 shows the ACFs for 36 random numbers, 360 random numbers and 1,000 r
 
 **Explain the differences among these figures. Do they all indicate that the data are white noise?**
 
-![wnacfplus-1.png](wnacfplus-1.png)
-
 *Figure 8.31: Left: ACF for a white noise series of 36 numbers. Middle: ACF for a white noise series of 360 numbers. Right: ACF for a white noise series of 1,000 numbers.*
 
 According to the book, “autocorrelation measures the linear relationship between lagged values of a time series,” and the autocorrelation coefficients are plotted to show the autocorrelation function (ACF) in a plot called a correlogram. If there is no autocorrelation, this is called white noise and the autocorrelation should be close to 0. To qualify as white noise, 95% of the spikes in the ACF need to be within $\pm\ \frac{1.96}{\sqrt{T}}$ where T is the length of the time series. The bounds are plotted as the blue dashed lines on the correlogram.
@@ -691,7 +689,7 @@ The critical values are those that occur above or below $\pm\frac{1.96}{\sqrt{T}
 
 **A classic example of a non-stationary series is the daily closing IBM stock price series (data set ibmclose). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.**
 
-As shown below, the ACF plot exhibits a downward decay consistent with autocorrelated values for each successive lag. If the series were stationary, the ACF plot would exhibit a drop to zero very soon after lag 1. The PACF only exhibits a single spike above significance at lag 1, indicating that an ARIMA (1,1,0) model would be appropriate, but the PACF by itself isn't useful at determining whether differencing is needed.
+As shown below, the ACF plot exhibits a downward decay consistent with autocorrelated values for each successive lag. If the series were stationary, the ACF plot would exhibit a drop to zero very soon after lag 1. The PACF only exhibits a single spike above significance at lag 1, indicating that an ARIMA (1,1,0) model would be appropriate. The PACF would indicate an AR(1) model which will turn out to be equivalent to taking a first difference > indicating that it does need differencing. 
 
 ```{r}
 
@@ -740,7 +738,7 @@ An AR(p) model is an autoregressive model with an order of p; in our case the or
 
 **Produce a time plot for the series. How does the plot change as you change $ϕ_1$?**
 
-More negative values of $\phi$ make each successive value in the series more likely to have the opposite sign than the previous value, resulting in a plot that appears to fluctuate rapidly, with denser peaks and valleys. As $\phi$ approaches zero, any deviation between successive values is entirely due to random error, and therefore appears as white noise. More positive values of $\phi$ make each successive value more likely to have the same sign as the previous value, resulting in a series that appears to have wider-spaced peaks and valleys.
+More negative values of $\phi$ make each successive value in the series more likely to have the opposite sign than the previous value, resulting in a plot that appears to fluctuate rapidly, with denser peaks and valleys. As $\phi$ approaches zero, any deviation between successive values is entirely due to random error, and therefore appears as white noise. More positive values of $\phi$ make each successive value more likely to have the same sign as the previous value, resulting in a series that appears to have wider-spaced peaks and valleys. According to the book, when you have an AR(1) and ϕ1 = 0, yt is equivalent to white noise. When ϕ1 is 1 and c = 0 you have random walk. When ϕ1 < 0, yt oscillates near the mean. These properties are observed in the plots above.
 
 ```{r}
 

@@ -187,14 +187,35 @@ dfga2 %>%
 
 ```
 
+### Fill in NAs in 5-day cycle
+
+```{r}
+
+# Create full 5-day set of SeriesInds
+df4 <- df3 %>%
+    filter(category=='S01') %>%
+    mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
+    mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
+    mutate(Day.of.week=weekdays(date)) %>%
+    filter(Day.of.week != 'Saturday' & Day.of.week != 'Sunday') %>%
+    select(SeriesInd, category)
+for (i in df4$SeriesInd) {
+    for (j in seq(2, 6)) {
+       df4 <- rbind(df4, data.frame(SeriesInd=i, category=paste0('S0', j)))
+    }
+}
+
+# Join the original dataframe with the dataframe containing the full set of SeriesInd and categories
+df2 <- df %>%
+    merge(df4, by=c('SeriesInd', 'category'), all=T) %>%
+    arrange(SeriesInd, category)
+summary(df2)
+
+```
+
 ### Plot time series
 
 ```{r fig.width=11, fig.height=5}
-
-# Revert dataframe back to the earlier state, retaining weekend gaps
-df2 <- df_orig %>%
-    filter(SeriesInd <= 43021) %>%
-    arrange(SeriesInd, category)
 
 # To work with the data more easily, initialize list to hold dataframes, one for each category
 dfcat = list()
@@ -562,7 +583,7 @@ if (the_freq > 1) {
             head(3000) %>%
             stl(s.window='periodic') %>%
             autoplot() +
-            ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+            ggtitle(paste0('STL decomposition - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
         grid.arrange(p1, p2, ncol=1, nrow=2)
     
     }
