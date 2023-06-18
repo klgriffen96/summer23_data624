@@ -192,7 +192,7 @@ dfga2 %>%
 ```{r}
 
 # Create full 5-day set of SeriesInds
-df4 <- df3 %>%
+df4 <- df2 %>%
     filter(category=='S01') %>%
     mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
     mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
