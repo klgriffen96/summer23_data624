@@ -22,6 +22,7 @@ library(httr)         # To download the excel data from git
 library(gridExtra)    # To arrange ggplots in a grid
 library(xts)
 library(kableExtra)
+library(urca)         # For KPSS unit-root testing
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -40,6 +41,9 @@ df_orig <- readxl::read_excel(tmpfile, skip=0)
 ## Data preparation
 
 ```{r}
+
+# Set frequency
+the_freq <- 5
 
 # Remove blank observations at end
 df <- df_orig %>%
@@ -76,19 +80,11 @@ summary(df2)
 # Define which variables should be forecast for each category
 fcvars <- list(c(1, 2), c(2, 3), c(5, 7), c(1, 2), c(2, 3), c(5,7))
 
-# To work with the data more easily, initialize list to hold dataframes, one for each category
-dfcat = list()
-
-# Filter by category, selecting only those vars we're interested in for that category
-for (i in seq(1, 6)) {
-    dfcat[[i]] <- df2 %>%
-        filter(category == paste0('S0', i)) %>%
-        select(SeriesInd, !!paste0('Var0', fcvars[[i]][1]), !!paste0('Var0', fcvars[[i]][2]))
-}
-
 ```
 
-## Examine missing values
+## Exploratory data analysis
+
+### Examine missing values
 
 ```{r}
 
@@ -114,13 +110,100 @@ dfmv %>%
 
 ```
 
-## Exploratory data analysis
 
-### Plot time series (first pass)
+### Gap analysis
+
+We looked for patterns in the data set to determine if there was any seasonality and to evaluate where there were gaps. We assumed SeriesInd was an integer representing the number of days since a certain date, a common one being January 1, 1900 (the "origin" date). Using this logic, we converted SeriesInd to a date and examined where gaps occurred. Using an origin date of January 1, 1900 placed gaps on Friday and Saturday. It seemed more reasonable to assume that the series excluded weekend days, so we shifted the weekdays such that the gaps would fall on weekends.
+
+It is also noted that a number of gaps fall on other weekdays, with the greatest number on Monday (32). This is consistent with a US-based calendar which includes a number of national holidays that fall on Monday (e.g. Memorial Day and Labor Day).
+
+Because an origin date of January 1, 1900 yielded a week with gaps on Fridays and Saturdays, we performed a systematic search to find a reasonable origin that would align the gaps with Saturday and Sunday instead. Going under the assumption that this was a US calendar, we looked for origin dates that would place gaps on both January 1 and on December 25. The first such origin date that met these criteria was August 31, 1915, which would put our first data point in the year 2027. Therefore, we concluded that the data set either does not likely conform to a US calendar. We further concluded that the importance of the origin date was secondary and that the key observation was that the data is likely based on a seven-day week, with regular gaps on exactly two of those days. It is possible these are stock market prices, sales figures, or another such weekly metric.
+
+We also performed a gap analysis on the prediction set to aid in determining whether "weekend" values would need to be imputed (filled). As shown in the table, there are no weekend days in the prediction set.
+
+```{r}
+
+# Look for patterns in gaps in SeriesInd; first make a copy of df == dfga (gap analysis).
+# Filter by just a single category since this will give us a single set of SeriesInd values,
+# and the NAs in each category will all be in the same positions so it doesn't matter which category we choose.
+# Work from the theory that these are days of the week, and that that SeriesInd is the number of days since Jan 1, 1900.
+dfga <- df2 %>%
+    filter(category=='S01') %>%
+    mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
+    mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
+    mutate(Day.of.week=weekdays(date)) %>%
+    group_by(SeriesInd.mod7, Day.of.week) %>%
+    summarize(Gaps=sum(is.na(Var01)), Filled.vals=sum(!is.na(Var01)), .groups='keep') %>%
+    ungroup() %>%
+    arrange(SeriesInd.mod7) %>%
+    select(-SeriesInd.mod7)
+dfga %>%
+    kbl(caption='Gap analysis') %>%
+    kable_classic(full_width = F)
+
+```
+
+```{r}
+
+# Look at gaps in the SeriesInd values we need to predict;
+# first fill in values with -1 so we know which ones are missing
+df3 <- df_orig %>%
+    filter(SeriesInd > 43021) %>%
+    arrange(SeriesInd, category) %>%
+    select(SeriesInd, category, Var01) %>%
+    mutate(Var01=-1)
+
+# Create a sequence of values starting at the first value of SeriesInd and ending at the last
+dftmp2 <- data.frame(SeriesInd=seq(from=min(df3$SeriesInd), to=max(df3$SeriesInd)))
+
+# Create a tmp dataframe for categories
+dftmp3 <- data.frame(category=c('S01', 'S02', 'S03', 'S04', 'S05', 'S06'))
+
+# Create dataframe joining the complete set of SeriesInd to the categories
+dftmp4 <- dftmp2 %>%
+    merge(dftmp3, all=T) %>%
+    arrange(SeriesInd, category)
+
+# Join the original dataframe with the dataframe containing the full set of SeriesInd and categories
+df3 <- dftmp4 %>%
+    merge(df3, by=c('SeriesInd', 'category'), all.x=T) %>%
+    arrange(SeriesInd, category)
+
+# Examine gaps
+dfga2 <- df3 %>%
+    filter(category=='S01') %>%
+    mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
+    mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
+    mutate(Day.of.week=weekdays(date)) %>%
+    group_by(SeriesInd.mod7, Day.of.week) %>%
+    summarize(Gaps=sum(is.na(Var01)), Filled.vals=sum(!is.na(Var01)), .groups='keep') %>%
+    ungroup() %>%
+    arrange(SeriesInd.mod7) %>%
+    select(-SeriesInd.mod7)
+dfga2 %>%
+    kbl(caption='Gap analysis - prediction set') %>%
+    kable_classic(full_width = F)
+
+```
+
+### Plot time series
 
 ```{r fig.width=11, fig.height=5}
 
-# First pass: Ignore missing values in time series, just use consecutive values
+# Revert dataframe back to the earlier state, retaining weekend gaps
+df2 <- df_orig %>%
+    filter(SeriesInd <= 43021) %>%
+    arrange(SeriesInd, category)
+
+# To work with the data more easily, initialize list to hold dataframes, one for each category
+dfcat = list()
+
+# Filter by category, selecting only those vars we're interested in for that category
+for (i in seq(1, 6)) {
+    dfcat[[i]] <- df2 %>%
+        filter(category == paste0('S0', i)) %>%
+        select(SeriesInd, !!paste0('Var0', fcvars[[i]][1]), !!paste0('Var0', fcvars[[i]][2]))
+}
 
 # Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
 ts1 = list()
@@ -136,9 +219,11 @@ for (i in seq(1, 6)) {
     varname1 <- paste0('Var0', fcvars[[i]][1])
     varname2 <- paste0('Var0', fcvars[[i]][2])
 
-    # Create time series for each variable using ts
-    ts1[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname1] != Inf, varname1], frequency=7, start=start_date)
-    ts2[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname2] != Inf, varname2], frequency=7, start=start_date)
+    # Create time series for each variable
+    #ts1[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname1] != Inf, varname1], frequency=the_freq, start=start_date)
+    #ts2[[i]] <- ts(dfcat[[i]][dfcat[[i]][varname2] != Inf, varname2], frequency=the_freq, start=start_date)
+    ts1[[i]] <- ts(dfcat[[i]][[varname1]], frequency=the_freq, start=start_date)
+    ts2[[i]] <- ts(dfcat[[i]][[varname2]], frequency=the_freq, start=start_date)
 
     # Plot the time series
     p1a <- ts1[[i]] %>%
@@ -168,99 +253,57 @@ for (i in seq(1, 6)) {
 
 ```
 
-### Plot time series (second pass using xts)
+```{r fig.width=10, fig.height=8}
 
-```{r fig.width=11, fig.height=5, warning=F}
-
-# Second pass: Account for gaps using xts
-
-# Initialize ts objects; each element in each list will correspond to a category; e.g. ts1[[1]] will be S01, etc
-xts1 = list()
-xts2 = list()
-
-# Iterate over categories
-for (i in seq(1, 6)) {
-    
-    # Create var names for the two variables we're interested in for this category
-    varname1 <- paste0('Var0', fcvars[[i]][1])
-    varname2 <- paste0('Var0', fcvars[[i]][2])
-    
-    # Filter out infinite values
-    dftmp1 <- dfcat[[i]] %>%
-        filter(!is.infinite(eval(sym(varname1))))
-    dftmp2 <- dfcat[[i]] %>%
-        filter(!is.infinite(eval(sym(varname2))))
-    
-    # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
-    xts1[[i]] <- xts(dftmp1[varname1], order.by=as.Date(dftmp1$SeriesInd, origin='1900-01-01'))
-    xts2[[i]] <- xts(dftmp2[varname2], order.by=as.Date(dftmp2$SeriesInd, origin='1900-01-01'))
-
-    # Plot the time series
-    p1a <- xts1[[i]] %>%
-        autoplot() +
-        ggtitle(paste0('Category S0', i, ', ', varname1)) +
-        ylab(varname1)
-    p1b <- dfcat[[i]] %>%
-        filter(dfcat[[i]][!!varname1] != Inf & !is.na(dfcat[[i]][!!varname1])) %>%
-        ggplot() +
-        geom_histogram(aes(x=eval(sym(varname1))), bins=30) +
-        ggtitle(paste0('Category S0', i, ', ', varname1)) +
-        xlab(varname1)
-    grid.arrange(p1a, p1b, ncol=2)
-    p2a <- xts2[[i]] %>%
-        autoplot() +
-        ggtitle(paste0('Category S0', i, ', ', varname2)) +
-        ylab(varname2)
-    p2b <- dfcat[[i]] %>%
-        filter(dfcat[[i]][!!varname2] != Inf & !is.na(dfcat[[i]][!!varname2])) %>%
-        ggplot() +
-        geom_histogram(aes(x=eval(sym(varname2))), bins=30) +
-        ggtitle(paste0('Category S0', i, ', ', varname2)) +
-        xlab(varname2)
-    grid.arrange(p2a, p2b, ncol=2)
-
-}
-
+# Plot time series on one graph
+p1 <- dfcat[[1]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var01, color='Var01')) +
+    geom_line(aes(y=Var02 / 500000, color='Var02')) +
+    scale_y_continuous(sec.axis=sec_axis(~ . * 500000, name='Var02')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S01')
+p2 <- dfcat[[2]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var02, color='Var02')) +
+    geom_line(aes(y=Var03 * 10000000, color='Var03')) +
+    scale_y_continuous(sec.axis=sec_axis(~ . / 10000000, name='Var03')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S02')
+p3 <- dfcat[[3]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var05, color='Var05')) +
+    geom_line(aes(y=Var07, color='Var07')) +
+    scale_y_continuous(sec.axis=sec_axis(~ ., name='Var07')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S03')
+p4 <- dfcat[[4]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var01, color='Var01')) +
+    geom_line(aes(y=Var02 / 1000000, color='Var02')) +
+    scale_y_continuous(sec.axis=sec_axis(~ . * 1000000, name='Var02')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S04')
+p5 <- dfcat[[5]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var02, color='Var02')) +
+    geom_line(aes(y=Var03 * 1000000, color='Var03')) +
+    scale_y_continuous(sec.axis=sec_axis(~ . / 1000000, name='Var03')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S05')
+p6 <- dfcat[[6]] %>%
+    ggplot(aes(x=SeriesInd)) +
+    geom_line(aes(y=Var05, color='Var05')) +
+    geom_line(aes(y=Var07, color='Var07')) +
+    scale_y_continuous(sec.axis=sec_axis(~ ., name='Var07')) + 
+    scale_color_manual(values=c('black', 'darkred')) +
+    ggtitle('Category S06')
+#grid.arrange(p1, p2, p3, p4, p5, p6, nrow=6, ncol=1)
+grid.arrange(p1, p2, p3, nrow=3, ncol=1)
+grid.arrange(p4, p5, p6, nrow=3, ncol=1)
+ 
 ```
 
-```{r}
-
-# Graph a small section to show gaps in data
-varname1 <- 'Var01'
-dftmp <- dfcat[[1]] %>%
-    filter(!is.infinite(eval(sym(varname1))))
-
-# Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
-tstmp <- xts(dftmp['Var01'], order.by=as.Date(dftmp$SeriesInd, origin='1900-01-01'))
-
-tstmp %>%
-    autoplot() +
-    xlim(c(as.Date('2012-01-01'), as.Date('2013-01-01'))) +
-    ggtitle('Plot of year 2012, category S01 to show gaps in data')
-
-```
-
-### Gap analysis
-
-```{r}
-
-# Look for patterns in gaps in SeriesInd; first make a copy of df == dfga (gap analysis).
-# Filter by just a single category since this will give us a single set of SeriesInd values,
-# and the NAs in each category will all be in the same positions so it doesn't matter which category we choose.
-# Work from the theory that these are days of the week, and that that SeriesInd is the number of days since Jan 1, 1900.
-dfga <- df2 %>%
-    filter(category=='S01') %>%
-    mutate(date=as.Date(SeriesInd, origin='1900-01-01')+1) %>%
-    mutate(SeriesInd.mod7=SeriesInd %% 7) %>%
-    mutate(Day.of.week=weekdays(date)) %>%
-    group_by(SeriesInd.mod7, Day.of.week) %>%
-    summarize(Gaps=sum(is.na(Var01)), Filled.vals=sum(!is.na(Var01)), .groups='keep') %>%
-    arrange(SeriesInd.mod7)
-dfga %>%
-    kbl(caption='Gap analysis') %>%
-    kable_classic(full_width = F)
-
-```
 
 ### Scatterplot matrix
 
@@ -271,74 +314,19 @@ GGally::ggpairs(df2[,3:7], progress=F)
 
 ```
 
-### ACF/PACF plots
+An additional step in exploratory data analysis that is often helpful to better understand the data set is to generate pairwise plots showing the relationship between predictors. Based on these pairwise plots (see below), we observed an extremely high degree of correlation between some predictors. Notably, variables Var01, Var03, Var05, and Var07 contain very similar values, suggesting that any missing values of one might be imputed using existing values of another. Without the context of what these variables represent, it is difficult to speculate on why they might be correlated as such, but it is possible that the data were collected by different observers using similar but slightly different methodologies or techniques.
 
-```{r}
+### Outliers
 
-# ACF/PACF plots - needed for ARIMA modeling
-for (i in seq(1, 6)) {
+We discovered some obvious outliers in the data. Outliers adversely affect forecasts and, as such, should be either removed or replaced. Notably,outliers were discovered in the following variables, with four other variables having questionable values.
 
-    p1 <- ts1[[i]] %>%
-        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
-    p2 <- ts2[[i]] %>%
-        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
-    p1
-    p2
-}
+One such example is in Category S06, variable V07, which clearly exhibits an outlying value of approximately 190 about a quarter of the way into the series.
 
-
-```
-
-### Lag plots
 
 ```{r fig.width=11, fig.height=8}
 
-for (i in seq(1, 6)) {
-    
-    #i <- 1
-    #ts1[[i]] %>%
-    #    ggseasonplot(period='year')
-    
-    p1 <- ts1[[i]] %>%
-        gglagplot() +
-        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][1]))
-    p2 <- ts2[[i]] %>%
-        gglagplot() +
-        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][1]))
-    grid.arrange(p1, p2, ncol=2, nrow=1)
-    
-}
-
-```
-
-### Seasonal subseries plots
-
-```{r fig.width=11, fig.height=4}
-
-for (i in seq(1, 6)) {
-    
-    p1 <- ts1[[i]] %>%
-        ggsubseriesplot()
-    p2 <- ts2[[i]] %>%
-        ggsubseriesplot()
-    grid.arrange(p1, p2, ncol=2, nrow=1)
-
-}
-
-```
-
-```{r}
-
-    i < - 1
-    ts1[[i]] %>%
-        ggseasonplot(period='year')
-
-```
-
-
-### Outlier analysis
-
-```{r fig.width=11, fig.height=8}
+# Create list to hold outlier counts
+dfout <- data.frame()
 
 # Look for outliers using decomposition plots
 for (i in seq(1, 6)) {
@@ -356,24 +344,46 @@ for (i in seq(1, 6)) {
         filter(!is.na(eval(sym(varname2))))
     
     # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
-    ts1[[i]] <- ts(dftmp1[varname1], frequency=7, start=start_date)
-    ts2[[i]] <- ts(dftmp2[varname2], frequency=7, start=start_date)
+    ts1[[i]] <- ts(dftmp1[[varname1]], frequency=the_freq, start=start_date)
+    ts2[[i]] <- ts(dftmp2[[varname2]], frequency=the_freq, start=start_date)
 
-    p1 <- ts1[[i]] %>%
-        decompose(type='additive') %>%
-        autoplot() +
-        ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
-    p2 <- ts2[[i]] %>%
-        decompose(type='additive') %>%
-        autoplot() +
-        ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
-    grid.arrange(p1, p2, ncol=1, nrow=2)
+    if (the_freq > 1) {
+        
+        p1 <- ts1[[i]] %>%
+            decompose(type='additive') %>%
+            autoplot() +
+            ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
+        p2 <- ts2[[i]] %>%
+            decompose(type='additive') %>%
+            autoplot() +
+            ggtitle(paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
+        grid.arrange(p1, p2, ncol=1, nrow=2)
+        
+    }
+    
+    # Count of outliers > 3 SD
+    outct <- length(ts1[[i]][ts1[[i]] > mean(ts1[[i]]) + 3 * sd(ts1[[i]]) | ts1[[i]] < mean(ts1[[i]]) - 3 * sd(ts1[[i]])])
+    dfout <- rbind(dfout, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('Var0', fcvars[[i]][1]),
+        Outliers=outct
+    ))
+    outct <- length(ts2[[i]][ts2[[i]] > mean(ts2[[i]]) + 3 * sd(ts2[[i]]) | ts2[[i]] < mean(ts2[[i]]) - 3 * sd(ts2[[i]])])
+    dfout <- rbind(dfout, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('Var0', fcvars[[i]][2]),
+        Outliers=outct
+    ))
     
 }
-    
-```
 
-## Interpolation
+# Show outlier count
+dfout %>%
+    kbl(caption='Outliers beyond 3 standard deviations from the mean') %>%
+    kable_classic(full_width=F)
+
+
+```
 
 ### Impute missing values and outliers
 
@@ -396,9 +406,9 @@ for(i in seq(1, 6)) {
     dftmp[varname1] = ifelse(is.infinite(dftmp[[varname1]]), NA, dftmp[[varname1]])
     dftmp[varname2] = ifelse(is.infinite(dftmp[[varname2]]), NA, dftmp[[varname2]])
 
-    # Create time series for each variable using xts; SeriesInd appears to be the days since 1900-01-01
-    tsnew1[[i]] <- ts(dftmp[varname1], frequency=7, start=start_date)
-    tsnew2[[i]] <- ts(dftmp[varname2], frequency=7, start=start_date)
+    # Create time series for each variable
+    tsnew1[[i]] <- ts(dftmp[[varname1]], frequency=the_freq, start=start_date)
+    tsnew2[[i]] <- ts(dftmp[[varname2]], frequency=the_freq, start=start_date)
 
     # Replace missing values
     tsnew1[[i]] <- tsnew1[[i]] %>%
@@ -406,16 +416,38 @@ for(i in seq(1, 6)) {
     tsnew2[[i]] <- tsnew2[[i]] %>%
         tsclean(replace.missing=T)
 
-    # Decomp plots
-    p1 <- tsnew1[[i]] %>%
-        decompose(type='additive') %>%
-        autoplot()
-    p2 <- tsnew2[[i]] %>%
-        decompose(type='additive') %>%
-        autoplot()
-    grid.arrange(p1, p2, ncol=1, nrow=2)
+    if (the_freq > 1) {
+        
+        # Decomp plots
+        p1 <- tsnew1[[i]] %>%
+            decompose(type='additive') %>%
+            autoplot()
+        p2 <- tsnew2[[i]] %>%
+            decompose(type='additive') %>%
+            autoplot()
+        grid.arrange(p1, p2, ncol=1, nrow=2)
+        
+    }
 
 }
+
+```
+
+
+
+```{r fig.width=8, fig.height=4}
+
+# Pre- and post-imputation examples
+i <- 6
+p1 <- ts2[[i]] %>%
+    autoplot() +
+    ggtitle(paste0('Pre-imputation, category S0', i, ', ', varname2)) +
+    ylab(varname2)
+p2 <- tsnew2[[i]] %>%
+    autoplot() +
+    ggtitle(paste0('Post-imputation, category S0', i, ', ', varname2)) +
+    ylab(varname2)
+grid.arrange(p1, p2, nrow=1, ncol=2)
 
 ```
 
@@ -423,28 +455,253 @@ for(i in seq(1, 6)) {
 
 ```{r fig.width=11, fig.height=8}
 
-# Compare plots of pre- and post-interpolation
-for (i in seq(1, 6)) {
+if (the_freq > 1) {
 
-    # First var
-    p1 <- (ts1[[i]] %>% decompose(type='additive')) %>%
-        autoplot() +
-        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
-    p2 <- (tsnew1[[i]] %>% decompose(type='additive')) %>%
-        autoplot() +
-        ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
-    grid.arrange(p1, p2, ncol=1, nrow=2)
+    # Compare plots of pre- and post-interpolation
+    for (i in seq(1, 6)) {
     
-    # Second var
-    p3 <- (ts2[[i]] %>% decompose(type='additive')) %>%
-        autoplot() +
-        ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
-    p4 <- (tsnew2[[i]] %>% decompose(type='additive')) %>%
-        autoplot() +
-        ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
-    grid.arrange(p3, p4, ncol=1, nrow=2)
+        # First var
+        p1 <- (ts1[[i]] %>% decompose(type='additive')) %>%
+            autoplot() +
+            ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
+        p2 <- (tsnew1[[i]] %>% decompose(type='additive')) %>%
+            autoplot() +
+            ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][1])))
+        grid.arrange(p1, p2, ncol=1, nrow=2)
+        
+        # Second var
+        p3 <- (ts2[[i]] %>% decompose(type='additive')) %>%
+            autoplot() +
+            ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+        p4 <- (tsnew2[[i]] %>% decompose(type='additive')) %>%
+            autoplot() +
+            ggtitle(paste0('Post-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+        grid.arrange(p3, p4, ncol=1, nrow=2)
+    
+    }
 
 }
+
+```
+
+### Lag plots
+
+```{r fig.width=11, fig.height=8}
+
+# Lag plots - I don't think these would be useful
+for (i in seq(1, 6)) {
+    
+    p1 <- ts1[[i]] %>%
+        gglagplot() +
+        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][1]))
+    p2 <- ts2[[i]] %>%
+        gglagplot() +
+        ggtitle(paste0('Lag plot - category S0', i, ', Var0', fcvars[[i]][2]))
+    grid.arrange(p1, p2, ncol=2, nrow=1)
+    
+}
+
+```
+
+### Seasonal subseries plots
+
+```{r fig.width=11, fig.height=4}
+
+if (the_freq > 1) {
+    
+    # Seasonal subseries plots
+    for (i in seq(1, 6)) {
+        
+        p1 <- tsnew1[[i]] %>%
+            ggsubseriesplot(main=paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
+        p2 <- tsnew2[[i]] %>%
+            ggsubseriesplot(main=paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
+        grid.arrange(p1, p2, ncol=2, nrow=1)
+    
+    }
+    
+}
+
+```
+
+### Seasonal plots
+
+```{r}
+
+if (the_freq > 1) {
+
+    # I don't think these will be useful
+    for (i in seq(1, 6)) {
+        p1 <- tsnew1[[i]] %>%
+            head(100) %>%
+            ggseasonplot()
+        p2 <- tsnew2[[i]] %>%
+            head(100) %>%
+            ggseasonplot()
+        grid.arrange(p1, p2, nrow=2, ncol=1)
+    }
+    
+}
+
+```
+
+### Decomposition
+
+```{r}
+
+if (the_freq > 1) {
+    
+    # Decomposition
+    for (i in seq(1, 6)) {
+    
+        p1 <- tsnew1[[i]] %>% 
+            head(3000) %>%
+            stl(s.window='periodic') %>%
+            autoplot() +
+            ggtitle(paste0('STL decomposition - category S0', i, ', Var0', paste0(fcvars[[i]][1])))
+        p2 <- tsnew2[[i]] %>% 
+            head(3000) %>%
+            stl(s.window='periodic') %>%
+            autoplot() +
+            ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+        grid.arrange(p1, p2, ncol=1, nrow=2)
+    
+    }
+    
+}
+
+```
+
+### ACF/PACF plots
+
+Some types of models are sensitive to data that is autocorrelated, that is, data that contains values which are related to previous values in some regular or predictable way. These models require that the data be modified such that they are "stationary," meaning that they appear to be randomly distributed and when plotted look like "white noise."
+
+To identify autocorrelation patterns in the data, autocorrelation function (ACF) and partial autocorrelation function (PACF) plots can be constructed. These plots illustrate the relationship between lagged time series values, i.e. comparing one value with the the next value in the series, or the values two or more positions later. Examining the patterns in the ACF and PACF plots helps the modeler determine what parameters to use as a basis when modeling.
+
+ACF and PACF plots aid in evaluating whether the data is autocorrelated and, if so, whether it should be modified before modeling occurs. One such modification is "differencing," which converts time series data into the *change* in value over time. Once the data is "differenced," it is no longer autocorrelated, and the time series should appear to be "white noise." Likewise, the ACF and PACF plots should exhibit no clear trend or pattern.
+
+As shown in the figures, there is some trending to most variables that would indicate that differencing is needed prior to modeling. One possible exception is Var02 in categories 
+
+```{r}
+
+# ACF/PACF plots - needed for ARIMA modeling
+for (i in seq(1, 6)) {
+
+    p1 <- tsnew1[[i]] %>%
+        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][1]))
+    p2 <- tsnew2[[i]] %>%
+        ggtsdisplay(plot.type='partial', main=paste0('Category S0', i, ', Var0', fcvars[[i]][2]))
+    p1
+    p2
+    
+}
+
+```
+
+
+```{r}
+
+# Init df to hold kpss test stats to determine whether differencing is needed
+dfdiffs <- data.frame(matrix(nrow=0, ncol=6))
+colnames(dfdiffs) = c('Category', 'Variable', 'KPSS.test.statistic', 'Differencing.required', 
+                      'Number.of.seasonal.differences', 'Seasonal.differencing.required')
+
+# Differencing - all need differencing except Var02
+for (i in seq(1, 6)) {
+
+    # First variable in this category
+    tmp_kpss <- summary(tsnew1[[i]] %>% ur.kpss())@teststat
+    if (the_freq > 1) {
+        tmp_nsdiffs <- tsnew1[[i]] %>% nsdiffs()
+    }
+    else {
+        tmp_nsdiffs <- 0
+    }
+    diff_req <- 'no'
+    seas_diff_req <- 'no'
+    if (tmp_kpss > 1) {  # test statistic is given in percent, if it exceeds 1%, differencing is required
+        diff_req <- 'yes'
+    }
+    if (tmp_nsdiffs > 0) {  # nsdiffs() gives the number of seasonal differences required
+        seas_diff_req <- 'yes'
+    }
+    dfdiffs <- rbind(dfdiffs, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('V0', fcvars[[i]][1]),
+        KPSS.test.statistic=tmp_kpss,
+        Differencing.required=diff_req,
+        Number.of.seasonal.differences=tmp_nsdiffs,
+        Seasonal.differencing.required=seas_diff_req
+    ))
+
+    # Second variable in this category
+    tmp_kpss <- summary(tsnew2[[i]] %>% ur.kpss())@teststat
+    if (the_freq > 1) {
+        tmp_nsdiffs <- tsnew2[[i]] %>% nsdiffs()
+    }
+    else {
+        tmp_nsdiffs <- 0
+    }
+    diff_req <- 'no'
+    seas_diff_req <- 'no'
+    if (tmp_kpss > 1) {  # test statistic is given in percent, if it exceeds 1%, differencing is required
+        diff_req <- 'yes'
+    }
+    if (tmp_nsdiffs > 0) {  # nsdiffs() gives the number of seasonal differences required
+        seas_diff_req <- 'yes'
+    }
+    dfdiffs <- rbind(dfdiffs, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('V0', fcvars[[i]][1]),
+        KPSS.test.statistic=tmp_kpss,
+        Differencing.required=diff_req,
+        Number.of.seasonal.differences=tmp_nsdiffs,
+        Seasonal.differencing.required=seas_diff_req
+    ))
+
+}
+
+# Show table
+dfdiffs %>%
+    kbl(caption='Differencing requirements') %>%
+    kable_classic(full_width=F)
+
+```
+
+```{r}
+
+# Create new list to hold differenced ts objects
+tsdiff1 <- list()
+tsdiff2 <- list()
+
+# Now actually do the differencing
+for (i in seq(1, 6)) {
+    
+    # First variable in category i
+    tsdiff1[[i]] <- diff(tsnew1[[i]])
+    tmp_kpss <- summary(tsdiff1[[i]] %>% ur.kpss())@teststat
+    dfdiffs[2 * i - 1, 'KPSS.test.statistic'] <- tmp_kpss
+    diff_req <- 'no'
+    if (tmp_kpss > 1) {  # test statistic is given in percent, if it exceeds 1%, differencing is required
+        diff_req <- 'yes'
+    }
+    dfdiffs[2 * i - 1, 'Differencing.required'] <- diff_req
+
+    # Second variable in category i
+    tsdiff2[[i]] <- diff(tsnew1[[i]])
+    tmp_kpss <- summary(tsdiff1[[i]] %>% ur.kpss())@teststat
+    dfdiffs[2 * i, 'KPSS.test.statistic'] <- tmp_kpss
+    diff_req <- 'no'
+    if (tmp_kpss > 1) {  # test statistic is given in percent, if it exceeds 1%, differencing is required
+        diff_req <- 'yes'
+    }
+    dfdiffs[2 * i, 'Differencing.required'] <- diff_req
+}
+
+# Show updated table
+dfdiffs %>%
+    kbl(caption='Differencing requirements') %>%
+    kable_classic(full_width=F)
 
 ```
 
@@ -453,11 +710,12 @@ for (i in seq(1, 6)) {
 ```{r}
 
 # Prepare data frame for results
-dfr <- data.frame(matrix(nrow=0, ncol=11))
-colnames(dfr) <- c('category', 'var', 'model', 'method', 'ME', 'RMSE', 'MAE', 'MPE', 'MAPE', 'MASE', 'ACF1')
+#dfr <- data.frame(matrix(nrow=0, ncol=11))
+#colnames(dfr) <- c('category', 'var', 'model', 'method', 'ME', 'RMSE', 'MAE', 'MPE', 'MAPE', 'MASE', 'ACF1')
+dfr <- data.frame(matrix(nrow=0, ncol=5))
+colnames(dfr) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE')
 
 ```
-
 
 ### Exponential smoothing
 
@@ -470,27 +728,25 @@ fit_ets2 <- list()
 # ETS
 for (i in seq(1, 6)) {
     
+    # First variable in category i
     fit_ets1[[i]] <- ets(tsnew1[[i]])
     dfr <- rbind(dfr, data.frame(
-        category=paste0('S0', i), 
-        var=paste0('V0', fcvars[[i]][1]), 
-        model='ETS', 
-        method=fit_ets1[[i]]$method, 
-        accuracy(fit_ets1[[i]])))
+        Category=paste0('S0', i), 
+        Variable=paste0('V0', fcvars[[i]][1]), 
+        Model='ETS', 
+        Method=fit_ets1[[i]]$method, 
+        MAPE=accuracy(fit_ets1[[i]])[5]))
+    
+    # Second variable in category i
     fit_ets2[[i]] <- ets(tsnew2[[i]])
     dfr <- rbind(dfr, data.frame(
-        category=paste0('S0', i), 
-        var=paste0('V0', fcvars[[i]][1]), 
-        model='ETS', 
-        method=fit_ets2[[i]]$method,
-        accuracy(fit_ets2[[i]])))
+        Category=paste0('S0', i), 
+        Variable=paste0('V0', fcvars[[i]][2]), 
+        Model='ETS', 
+        Method=fit_ets2[[i]]$method,
+        MAPE=accuracy(fit_ets2[[i]])[5]))
     
 }
-
-# Display results
-dfr %>%
-    kbl(caption='ETS Modeling Results') %>%
-    kable_classic(full_width=F)
 
 ```
 
@@ -503,6 +759,17 @@ for (i in seq(1, 6)) {
     fit_ets2[[i]] %>%
         checkresiduals()
 }
+
+```
+
+For the most part, residuals look like white noise and are normally distributed.
+
+```{r}
+
+# Display results
+dfr %>%
+    kbl(caption='ETS Modeling Results') %>%
+    kable_classic(full_width=F)
 
 ```
 
@@ -522,10 +789,11 @@ ret_arima_name <- function (fit) {
         ',', fit$arma[2],
         ')(', fit$arma[3],
         ',',  fit$arma[7],
-        ',',  fit$arma[4]
+        ',',  fit$arma[4],
+        ')'
     )
     if ('drift' %in% names(fit$coef)) {
-        tmp_name <- paste(tmp_name, 'with drift')
+        tmp_name <- paste(tmp_name, ' with drift')
     }
     return(tmp_name)
 }
@@ -535,29 +803,23 @@ for (i in seq(1, 6)) {
     
     fit_arima1[[i]] <- auto.arima(tsnew1[[i]])
     dfr <- rbind(dfr, data.frame(
-        category=paste0('S0', i), 
-        var=paste0('V0', fcvars[[i]][1]), 
-        model='ARIMA', 
-        method=ret_arima_name(fit_arima1[[i]]), 
-        accuracy(fit_arima1[[i]])))
+        Category=paste0('S0', i), 
+        Variable=paste0('V0', fcvars[[i]][1]), 
+        Model='ARIMA', 
+        Method=ret_arima_name(fit_arima1[[i]]), 
+        MAPE=accuracy(fit_arima1[[i]])[5]))
     fit_arima2[[i]] <- auto.arima(tsnew2[[i]])
     dfr <- rbind(dfr, data.frame(
-        category=paste0('S0', i), 
-        var=paste0('V0', fcvars[[i]][1]), 
-        model='ARIMA', 
-        method=ret_arima_name(fit_arima2[[i]]),
-        accuracy(fit_arima1[[i]])))
+        Category=paste0('S0', i), 
+        Variable=paste0('V0', fcvars[[i]][2]), 
+        Model='ARIMA', 
+        Method=ret_arima_name(fit_arima2[[i]]),
+        MAPE=accuracy(fit_arima1[[i]])[5]))
     
 }
 
-# Display results
-dfr %>%
-    kbl(caption='Modeling Results') %>%
-    kable_classic(full_width=F)
-
 ```
 
-### Check residuals
 
 ```{r}
 
@@ -568,5 +830,107 @@ for (i in seq(1, 6)) {
     fit_arima2[[i]] %>%
         checkresiduals()
 }
+
+```
+
+As with the ETS models, residuals look like white noise and are normally distributed.
+
+```{r}
+
+# Display results
+dfr %>%
+    arrange(Category, Variable, Model) %>%
+    kbl(caption='Modeling Results - ETS and ') %>%
+    kable_classic(full_width=F)
+
+```
+
+### Model selection
+
+```{r}
+
+# Choose the model with the lower MAPE for each category/var combination
+dfr2 <- dfr %>%
+    group_by(Category, Variable) %>%
+    slice_min(MAPE)
+colnames(dfr2) <- c('Category', 'Variable', 'Model', 'Method', 'MAPE')
+dfr2 %>%
+    kbl(caption='Best-performing models') %>%
+    kable_classic(full_width=F)
+
+```
+
+
+## Forecasting
+
+```{r}
+
+# Create variable to store forcasts
+fc1 <- list()
+fc2 <- list()
+
+# Create data frame to store forecasts
+dffc <- data.frame(matrix(nrow=0, ncol=3))
+colnames(dffc) <- c('Category', 'Variable', 'Forecast')
+
+for (i in seq(1, 6)) {
+    
+    # First var in category
+    if (dfr2[2 * i - 1, 'Model'] == 'ETS') {
+        fc1[[i]] <- fit_ets1[[i]] %>% forecast(h=140)
+    } else {
+        fc1[[i]] <- fit_arima1[[i]] %>% forecast(h=140)
+    }
+    p1 <- fc1[[i]] %>%
+        autoplot() +
+        ylab('Forecasted units') +
+        ggtitle(paste0('Forecasts - category S0', i, ', VAR0', fcvars[[i]][1]))
+    print(p1)
+
+    # First var in category
+    if (dfr2[2 * i, 'Model'] == 'ETS') {
+        fc2[[i]] <- fit_ets2[[i]] %>% forecast(h=140)
+    } else {
+        fc2[[i]] <- fit_arima2[[i]] %>% forecast(h=140)
+    }
+    p2 <- fc2[[i]] %>%
+        autoplot() +
+        ylab('Forecasted units') +
+        ggtitle(paste0('Forecasts - category S0', i, ', VAR0', fcvars[[i]][2]))
+    print(p2)
+    
+    # Store forecasts in df
+    dffc <- rbind(dffc, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('V0', fcvars[[i]][1]),
+        Forecast=data.frame(fc1[[i]])['Point.Forecast']
+    ))
+    dffc <- rbind(dffc, data.frame(
+        Category=paste0('S0', i),
+        Variable=paste0('V0', fcvars[[i]][2]),
+        Forecast=data.frame(fc2[[i]])['Point.Forecast']
+    ))
+
+}
+
+#df_orig %>%
+#    filter(SeriesInd > 43021) %>%
+#    select(SeriesInd) %>%
+
+#dffc %>%
+#    merge()
+
+# Display a few rows
+dffc %>%
+    head(10) %>%
+    kbl(caption='Forecast values (first 10 values)') %>%
+    kable_classic(full_width=F)
+
+```
+
+```{r}
+
+# Write forecasts
+
 
 ```
