@@ -598,7 +598,6 @@ and to additionally remove those with a high proportion of data:
 However, that still leaves 17.7% of observations with at least one missing value. So a combination of removing some observations along with the above variables would be more effective. The disadvantage of this is that 11 variables would be removed--a full 30% of all variables.
 
 ```{r}
-
 # Create copy of original data set
 sb3 <- Soybean
 
@@ -611,17 +610,19 @@ sb3 <- sb3 %>%
     select(-leaf.mild, -mycelium, -sclerotia, -hail, -sever, -seed.tmt, -germ, -lodging, -fruiting.bodies, -fruit.spots, -seed.discolor)
 
 # Recalculate number of rows contain missing values
-some_missing <- rowSums(is.na(sb3)) > 0
-print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
-    round(nrow(sb3[some_missing,]) / nrow(sb3), 3)))
-print(paste0("Proportion of observations retained from original data set: ",
-    round(nrow(sb3) / nrow(Soybean), 3)))
+#some_missing <- rowSums(is.na(sb3)) > 0
+#print(paste0("Proportion of observations with missing values after removing degenerate variables: ", 
+#    round(nrow(sb3[some_missing,]) / nrow(sb3), 3)))
+#print(paste0("Proportion of observations retained from original data set: ",
+#    round(nrow(sb3) / nrow(Soybean), 3)))
 
 ```
 
+
 Another approach would be to impute the missing data. The MICE package (multivariate imputation by chained equations) is an appropriate way to do this. Even using MICE, the observations with over 24 variables missing would seem to remain problematic, so we'll remove those first before imputing. As shown below, we now have a dataset with no missing cases, and over 95% of the original observations were retained.
 
-```{r warning=FALSE}
+
+```{r warning=FALSE, eval=FALSE}
 
 # Create copy of original data set
 sb4 <- Soybean

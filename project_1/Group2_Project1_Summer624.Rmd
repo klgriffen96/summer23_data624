@@ -8,6 +8,11 @@ output:
 always_allow_html: true
 ---
 
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
+```
+
 ## Introduction 
 
 This report is intended for colleagues from a variety of backgrounds and contains both technical and non-technical explanations of the work conducted. The objective of this project was to perform the appropriate analysis in order to forecast two variables (of five provided) each from six different time series sets. We were provided a spreadsheet that contains 1622 periods of every variable in every set and were expected to forecast 140 periods. The sets are labeled S01, S02, S03, S04, S05 and S06 and each contains variables labeled V01, V02, V03, V05, and V07. Different variables are required to be forecast depending on the set, specified below:
@@ -418,5 +423,9 @@ for (i in 1:length(df_all_given$S01$SeriesInd)){
 }
 
 all_counts
+
+```
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
 
 ```
