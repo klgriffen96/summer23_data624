@@ -12,23 +12,7 @@ always_allow_html: true
 knitr::opts_chunk$set(fig.path='Figs/', echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
 ```
 
-## Introduction 
-
-This report is intended for colleagues from a variety of backgrounds and contains both technical and non-technical explanations of the work conducted. The objective of this project was to perform the appropriate analysis in order to forecast two variables (of five provided) each from six different time series sets. We were provided a spreadsheet that contains 1622 periods of every variable in every set and were expected to forecast 140 periods. The sets are labeled S01, S02, S03, S04, S05 and S06 and each contains variables labeled V01, V02, V03, V05, and V07. Different variables are required to be forecast depending on the set, specified below:
-
-S01 – Forecast  Var01, Var02
-S02 – Forecast  Var02, Var03
-S03 – Forecast  Var05, Var07
-S04 – Forecast  Var01, Var02
-S05 – Forecast  Var02, Var03
-S06 – Forecast  Var05, Var07
-
-The goal of this report is to forecast 140 future time periods for each of the above variables, minimizing mean absolute percent error (MAPE). Results will be attached in an Excel file with each category in a separate tab.
-
 ## Data Preparation
-
-The data was provided as an excel (.xls) file. The columns provided were the series index, the category, and then a column for each variable. To conduct the data analysis and forecasting the open source software `R` was used. In order to begin processing the data, the data was read into `R` from github (where the provided data file was stored) and stored in a format in `R` called a dataframe. Below is a preview of the data to get an idea of the format.
-
 ```{r setup, warning=FALSE, echo = FALSE}
 library(httr)
 library(kableExtra)
@@ -40,7 +24,11 @@ library(ggfortify)
 library(gridExtra)
 library(scales)
 library(flextable)
+library(openxlsx)
 set.seed(123)
+
+# Set minimal theme
+theme_set(theme_minimal())
 
 ```
 
@@ -57,13 +45,11 @@ head(df, 10) |>
   flextable()
 ```
 
-
 ```{r slice}
 #Split the data into data frames by category and var name
 
 df_long <- df %>% gather(key, value, -SeriesInd, -category)
 split_data <- split(df_long, f=list(df_long$category, df_long$key))
-
 
 
 #put the combo into a list so it can be run through
@@ -75,6 +61,14 @@ list_vars <- c(
   "S05.Var02", "S05.Var03",
   "S06.Var05", "S06.Var07"
 )
+
+#select list items based on the list vars and then turn each list item 
+myts_raw <- lapply(split_data[list_vars], function(x) {
+    x %>% 
+    dplyr::select(value) %>% 
+    slice(1:1622) %>% #removes the missing values we need to predict
+    ts()
+})
 
 
 #select list items based on the list vars and then turn each list item into a clean ts
@@ -89,53 +83,64 @@ myts <- lapply(split_data[list_vars], function(x) {
 
 ```
 
-`myts` is now a list of clean time series objects -- all the ones we need to forecast for
-
 
 ```{r data-exploration}
-lapply(list_vars, function(var) {
-  ts <- myts[[var]]
-  plot <- autoplot(ts) + ggtitle(paste("Plot for", var))
-  print(plot)
-})
+
+plot_grid <- function(df){
+# Takes as input a dataframe which is a list of ts objects  
+
+# Create an empty list to store the plots
+plot_list <- list()
+
+# Generate the plots and store them in the plot_list
+for (var in list_vars) {
+  ts <- df[[var]]
+  plot <- autoplot(ts) + ggtitle(var) + scale_y_continuous(labels = scales::comma)  # Customize y-axis labels
+  plot_list[[var]] <- plot
+}
+
+# Arrange the plots in a grid
+grid_arranged_plots <- do.call(grid.arrange, c(plot_list, ncol = 4))
+
+# Print the grid of plots
+print(grid_arranged_plots)
+}
+
+plot_grid(myts)
+plot_grid(myts_raw)
 ```
 
 Using the function `ndiffs` we can see that each series requires 1 differencing to become stationary.
 
-```{r test-split}
-test_split <- function(x){
-  # Determine the index to split the time series into train and test sets
-  split.index <- floor(0.8 * length(ts))  # 80% for training, 20% for testing
+```{r backtransform-diff}
+# Function to backtransorm differencing
+back_diff <- function(diff_t, t1){
   
-  # Split the time series into train and test sets
-  train <- window(ts, end = split.index)
-  test <- window(ts, start = split.index + 1)
+  # Append the initial value
+  init <- append(t1, diff_t)
   
-  # Set the horizon
-  horizon <- length(test)
-
-  return(list(train, test, horizon))
-}
+  # Cumsum the diffed series with the inital value as the first item
+  backtransformed_series <- cumsum(init)
+  
+  # Return result  
+  return(backtransformed_series)
+  
+  }
+  
 ```
 
-```{r ses}
-# Create the empty vectors
-smooth_results <- vector(mode = "list", length = length(myts))
-ses_MAPE <- vector("numeric", length = length(list_vars))
-holt_MAPE <- vector("numeric", length = length(list_vars))
-ses_p <- vector("numeric", length = length(list_vars))
-holt_p <- vector("numeric", length = length(list_vars))
+```{r ses_define_func}
 
 # Create a function to test the ses and holt forecasts with test and train data
 ses_test <- function(x, i) {
-  ts <- diff(x)
-  ts <- x
+  
+
   # Determine the index to split the time series into train and test sets
-  split.index <- floor(0.8 * length(ts))  # 80% for training, 20% for testing
+  split.index <- floor(0.8 * length(x))  # 80% for training, 20% for testing
   
   # Split the time series into train and test sets
-  train <- window(ts, end = split.index)
-  test <- window(ts, start = split.index + 1)
+  train <- window(x, end = split.index) 
+  test <- window(x, start = split.index + 1)
   
   # Set the horizon
   horizon <- length(test)
@@ -146,32 +151,48 @@ ses_test <- function(x, i) {
   
   # Test with test data
   ses_res <- accuracy(ses.fit, test)['Test set', 'MAPE']
-  
 
   # Holt fit with training data
   holt.fit <- holt(train, damped = TRUE, h = horizon)
   holt.p <- Box.test(residuals(holt.fit))$p.value
-
+  
+  # Backtransform fitted and test data, initializing wiht the first value of train
+  holt_fitted <- back_diff(holt.fit$mean, test[1]) %>% ts(start = split.index + 1)
   # Test with test data
   holt_res <- accuracy(holt.fit, test)['Test set', 'MAPE']
   
-  result <- list(ses_MAPE = ses_res, 
-                 ses.p = ses.p, 
-                 holt_MAPE = holt_res, 
-                 holt.p=holt.p)
-  
-  # plot
-  p <- autoplot(train) +
-    autolayer(ses.fit, series = "ses") +
+
+  # Create a plot
+  p <- autoplot(window(x, end=split.index)) +
+    autolayer(ses.fit, series = "ses") + #ses forecast
     autolayer(holt.fit, alpha = 0.4, series = "holt") +
-    autolayer(test, series = "test data") +
-    ggtitle(list_vars[i])
+    autolayer(test, series = "Test data") +
+    ggtitle(paste(list_vars[i], "Exponential Smoothing Forecasts"))
+  
+  # Return list of results
+  result <- list(ses_MAPE = ses_res, #1
+                 ses.p = ses.p, #2
+                 holt_MAPE = holt_res, #3 
+                 holt.p=holt.p #4
+                ) #5
   
   print(p)
-  
   return(result)
 }
+```
 
+
+
+
+```{r run_ses}
+# Create the empty vectors
+smooth_results <- vector(mode = "list", length = length(myts))
+ses_MAPE <- vector("numeric", length = length(list_vars))
+holt_MAPE <- vector("numeric", length = length(list_vars))
+ses_p <- vector("numeric", length = length(list_vars))
+holt_p <- vector("numeric", length = length(list_vars))
+
+# Run through the function to build the lists
 for (i in seq_along(myts)) {
   result<- ses_test(myts[[i]], i)
   ses_MAPE[i] <- result[1]
@@ -179,7 +200,6 @@ for (i in seq_along(myts)) {
   holt_MAPE[i] <- result[3]
   holt_p[i] <- result[4]
 }
-
 ```
 
 ```{r arima}
@@ -221,11 +241,11 @@ arima_test <- function(x, i) {
 
 ## Run 
 for (i in seq_along(myts)) {
-  arima_MAPE<- arima_test(myts[[i]], i)
+  arima_MAPE[i]<- arima_test(myts[[i]], i)
 }
 ```
 
-```{r}
+```{r results_mape}
 results_df <- cbind(
   list_vars,
   ses_MAPE,
@@ -237,24 +257,23 @@ results_df # %>% flextable()
 ```
 ## Forecast
 
-Because the SES model produces the best result, we will use that for all data tables
 
 ```{r forecasts}
+SeriesInd <- df_long$SeriesInd %>% unique()
+
 forecasts <- lapply(myts, function(x){
 
-  ses.fit <- ses(x, h = 140)$fitted
+  ses.fit <- ses(x, h = 140)
+  
+  cbind(SeriesInd, 
+        append(x, ses.fit$mean))
 })
 ```
+
 ```{r export}
-
 #reference: https://www.statology.org/r-export-to-excel-multiple-sheets/
-library(openxlsx)
-
-
 #export each data frame to separate sheets in same Excel file
-openxlsx::write.xlsx(forecasts, file = 'mydata.xlsx') 
-
-
+openxlsx::write.xlsx(forecasts, file = 'group2_forecasts.xlsx') 
 ```
 
 ## Appendix 1: R Code
