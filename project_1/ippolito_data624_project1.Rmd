@@ -199,10 +199,7 @@ df4 <- df3 %>%
     mutate(Day.of.week=weekdays(date)) %>%
     filter(Day.of.week != 'Saturday' & Day.of.week != 'Sunday') %>%
     select(SeriesInd, category)
-#df4 <- df4 %>%
-#    mutate(S01=NA, S02=NA, S03=NA, S04=NA, S05=NA, S06=NA)
-
-for (i in seq(from=min(df$SeriesInd), to=max(df$SeriesInd))) {
+for (i in df4$SeriesInd) {
     for (j in seq(2, 6)) {
        df4 <- rbind(df4, data.frame(SeriesInd=i, category=paste0('S0', j)))
     }
@@ -586,7 +583,7 @@ if (the_freq > 1) {
             head(3000) %>%
             stl(s.window='periodic') %>%
             autoplot() +
-            ggtitle(paste0('Pre-interpolation - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
+            ggtitle(paste0('STL decomposition - Category S0', i, ', Var0', paste0(fcvars[[i]][2])))
         grid.arrange(p1, p2, ncol=1, nrow=2)
     
     }
