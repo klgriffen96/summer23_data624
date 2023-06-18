@@ -1,0 +1,267 @@
+---
+title: 'Data 624: Project 1'
+author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
+date: "6/11/2023"
+output:
+  word_document: 
+    toc: true
+always_allow_html: true
+---
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.path='Figs/', echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
+```
+
+## Introduction 
+
+This report is intended for colleagues from a variety of backgrounds and contains both technical and non-technical explanations of the work conducted. The objective of this project was to perform the appropriate analysis in order to forecast two variables (of five provided) each from six different time series sets. We were provided a spreadsheet that contains 1622 periods of every variable in every set and were expected to forecast 140 periods. The sets are labeled S01, S02, S03, S04, S05 and S06 and each contains variables labeled V01, V02, V03, V05, and V07. Different variables are required to be forecast depending on the set, specified below:
+
+S01 – Forecast  Var01, Var02
+S02 – Forecast  Var02, Var03
+S03 – Forecast  Var05, Var07
+S04 – Forecast  Var01, Var02
+S05 – Forecast  Var02, Var03
+S06 – Forecast  Var05, Var07
+
+The goal of this report is to forecast 140 future time periods for each of the above variables, minimizing mean absolute percent error (MAPE). Results will be attached in an Excel file with each category in a separate tab.
+
+## Data Preparation
+
+The data was provided as an excel (.xls) file. The columns provided were the series index, the category, and then a column for each variable. To conduct the data analysis and forecasting the open source software `R` was used. In order to begin processing the data, the data was read into `R` from github (where the provided data file was stored) and stored in a format in `R` called a dataframe. Below is a preview of the data to get an idea of the format.
+
+```{r setup, warning=FALSE, echo = FALSE}
+library(httr)
+library(kableExtra)
+library(fpp2)
+library(imputeTS)
+library(tidyverse)
+library(urca)
+library(ggfortify)
+library(gridExtra)
+library(scales)
+set.seed(123)
+
+```
+
+```{r get_data, warning=FALSE, echo = FALSE}
+github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/project_1/Data%20Set%20for%20Class.xls"
+temp_file <- tempfile(fileext = ".xls")
+req <- GET(github_link, 
+          # write result to disk
+           write_disk(path = temp_file))
+
+df <- readxl::read_excel(temp_file)
+
+head(df, 10) |>
+  kbl(caption = "Series Provided") |>
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+```{r split_data}
+
+# where given ends and predict starts on next
+break_given_predict <- 43021
+
+df_all_given <- df |> filter(SeriesInd <= break_given_predict)
+df_predict <- df |> filter(SeriesInd > break_given_predict)
+
+df_all_given <- split(df_all_given, f = df$category)
+df_predict <- split(df_predict, f = df$category)
+
+head(df_all_given$S01, 5) |>
+  kbl(caption = "S01") |>
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+```{r slice}
+df_long <- df %>% gather(key, value, -SeriesInd, -category)
+split_data <- split(df_long, f=list(df_long$category, df_long$key))
+
+#Split the data into data frames by category and var name
+split_data
+
+#put the combo into a list so it can be run through
+list_vars <- c(
+  "S01.Var01", "S01.Var02",
+  "S02.Var02", "S02.Var03",
+  "S03.Var05", "S03.Var07",
+  "S04.Var01", "S04.Var02",
+  "S05.Var02", "S05.Var03",
+  "S06.Var05", "S06.Var07"
+)
+
+
+#select list items based on the list vars and then turn each list item into a clean ts
+myts <- lapply(split_data[list_vars], function(x) {
+    x %>% 
+    dplyr::select(value) %>% 
+    slice(1:1622) %>% #removes the missing values we need to predict
+    ts() %>% 
+    tsclean(lambda = "auto") %>%
+    na_ma() 
+})
+
+```
+
+`myts` is now a list of clean time series objects -- all the ones we need to forecast for
+
+
+```{r data-exploration}
+
+for (i in 1:length(list_vars)){
+  var <- list_vars[i]
+  ts <- myts[[var]] 
+  
+  plot <- autoplot(ts) +
+      ggtitle(paste("Plot for", var))
+  
+
+  print(plot)
+}
+
+```
+
+
+Using the funciton `ndiffs` we can see that each series requries 1 differencing to become stationary.
+
+```{r test-split}
+test_split <- function(x){
+  # Determine the index to split the time series into train and test sets
+  split.index <- floor(0.8 * length(ts))  # 80% for training, 20% for testing
+  
+  # Split the time series into train and test sets
+  train <- window(ts, end = split.index)
+  test <- window(ts, start = split.index + 1)
+  
+  # Set the horizon
+  horizon <- length(test)
+
+  return(list(train, test, horizon))
+}
+```
+
+```{r ses}
+# Create the empty vectors
+smooth_results <- vector(mode = "list", length = length(myts))
+ses_MAPE <- vector("numeric", length = length(list_vars))
+holt_MAPE <- vector("numeric", length = length(list_vars))
+ses_p <- vector("numeric", length = length(list_vars))
+holt_p <- vector("numeric", length = length(list_vars))
+
+# Create a function to test the ses and holt forecasts with test and train data
+ses_test <- function(x, i) {
+  #ts <- diff(x)
+  ts <- x
+  # Determine the index to split the time series into train and test sets
+  split.index <- floor(0.8 * length(ts))  # 80% for training, 20% for testing
+  
+  # Split the time series into train and test sets
+  train <- window(ts, end = split.index)
+  test <- window(ts, start = split.index + 1)
+  
+  # Set the horizon
+  horizon <- length(test)
+  
+  # Ses fit with training data
+  ses.fit <- ses(train, h = horizon)
+  ses.p <- Box.test(residuals(ses.fit))$p.value
+  
+  # Test with test data
+  ses_res <- accuracy(ses.fit, test)['Test set', 'MAPE']
+  
+
+  # Holt fit with training data
+  holt.fit <- holt(train, damped = TRUE, h = horizon)
+  holt.p <- Box.test(residuals(holt.fit))$p.value
+
+  # Test with test data
+  holt_res <- accuracy(holt.fit, test)['Test set', 'MAPE']
+  
+  result <- list(ses_MAPE = ses_res, 
+                 ses.p = ses.p, 
+                 holt_MAPE = holt_res, 
+                 holt.p=holt.p)
+  
+  # plot
+  p <- autoplot(train) +
+    autolayer(ses.fit, series = "ses") +
+    autolayer(holt.fit, alpha = 0.4, series = "holt") +
+    autolayer(test, series = "test data") +
+    ggtitle(list_vars[i])
+  
+  print(p)
+  
+  return(result)
+}
+
+for (i in seq_along(myts)) {
+  result<- ses_test(myts[[i]], i)
+  ses_MAPE[i] <- result[1]
+  ses_p[i] <- result[2]
+  holt_MAPE[i] <- result[3]
+  holt_p[i] <- result[4]
+}
+
+
+#apply scales::percent for formatting
+SES_MAPE <- lapply(ses_MAPE, function(x) percent(x, scale = 1))
+Holt_MAPE <- lapply(holt_MAPE, function(x) percent(x, scale = 1))
+```
+
+```{r arima}
+# Create the empty vectors
+arima_MAPE <- vector(mode = "list", length = length(myts))
+
+# Create a function to test the ses and holt forecasts with test and train data
+arima_test <- function(x, i) {
+  
+  # Determine the index to split the time series into train and test sets
+  split.index <- floor(0.8 * length(x))  # 80% for training, 20% for testing
+  
+  # Split the time series into train and test sets
+  train <- window(x, end = split.index)
+  test <- window(x, start = split.index + 1)
+  
+  # Set the horizon
+  horizon <- length(test)
+  
+  #auto arima fit
+  arima.fc <-  train %>% 
+  auto.arima() %>%
+  forecast(h=horizon)
+  
+  # test results
+  result <- accuracy(arima.fc, test)['Test set', 'MAPE']
+
+  
+  p <- checkresiduals(arima.fc)
+
+  print(p)
+  
+  return(result)
+}
+
+
+## Run 
+for (i in seq_along(myts)) {
+  arima_MAPE[i] <- arima_test(myts[[i]], i)
+}
+
+Arima_MAPE <- lapply(arima_MAPE, function(x) percent(x, scale = 1))
+```
+
+```{r}
+results_df <- cbind(
+  list_vars,
+  SES_MAPE,
+  Holt_MAPE,
+  Arima_MAPE
+)
+
+# Print the results as a table
+print(results_df, format = "markdown", digits = 2)  %>% 
+  kable()
+```
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
+
+```
