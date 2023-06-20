@@ -35,7 +35,9 @@ theme_set(theme_minimal())
 
 **A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
 
-### (a) Start R and use these commands to load the data:
+### (a)
+
+**Start R and use these commands to load the data:**
 
     > library(AppliedPredictiveModeling)
     > data(ChemicalManufacturingProcess)
@@ -50,7 +52,9 @@ data(ChemicalManufacturingProcess)
 
 ```
 
-### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+### (b)
+
+**A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).**
 
 We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
 
@@ -137,7 +141,7 @@ ctrl <- trainControl(method='cv', number=10)
 
 Linear regression
 
-```{r}
+```{r warning=FALSE}
 
 # Linear model
 set.seed(77)
@@ -156,7 +160,7 @@ dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fit$bestTune
 
 Robust linear regression
 
-```{r}
+```{r warning=FALSE}
 
 # Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
 set.seed(77)
@@ -169,7 +173,7 @@ dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=NA)  # temp
 
 Partial least squares
 
-```{r}
+```{r warning=FALSE}
 
 # PLS, tuneLength=5
 set.seed(77)
@@ -187,7 +191,7 @@ dfr[5,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=20', RMSE=fit$re
 
 Ridge regression
 
-```{r}
+```{r warning=FALSE}
 
 # Ridge regression
 set.seed(77)
@@ -200,7 +204,7 @@ dfr[6,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fit$best
 
 Lasso regression
 
-```{r}
+```{r warning=FALSE}
 
 # Ridge regression
 set.seed(77)
@@ -215,13 +219,24 @@ dfr[7,] = data.frame(
 
 ```
 
+```{r}
+
+# Model comparison
+dfr %>%
+    kbl(caption='Model comparison') %>%
+    kable_classic(full_width=F)
+
+```
+
+The stepwise linear model with max parameters=9 was the best-performing model under training conditions, with an RMSE of 1.255.
+
 ### (d)
 
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
-The stepwise linear model with max parameters=9 was the best-performing model under training conditions. Calculate the accuracy based on the test test.
+First, calculate the accuracy based on the test test.
 
-```{r}
+```{r warning=FALSE}
 
 # Rerun the model - stepwise linear model using MASS package/caret
 set.seed(77)
@@ -236,7 +251,7 @@ accuracy(predy, testy)
 
 ```
 
-As expected, the RMSE for the test set is higher than that of the training set (1.335979 vs 1.225019, respectively). However, the test RMSE is only slightly higher. And the low MAPE value of 2.53 indicates good model performance.
+As expected, the RMSE for the test set is higher than that of the training set (1.335979 vs 1.225019, respectively). However, the test RMSE is only slightly higher, and the low MAPE value of 2.53 indicates good model performance.
 
 ### (e)
 
@@ -244,9 +259,15 @@ As expected, the RMSE for the test set is higher than that of the training set (
 
 ```{r}
 
-
+# Extract coefficients from model
+dftop <- data.frame(Coefficient=coef(fit$finalModel, fit$bestTune[['nvmax']] + 1))
+dftop %>%
+    kbl(caption='Model coefficients') %>%
+    kable_classic(full_width=F)
 
 ```
+
+As shown, the five most important variables are all those related to the manufacturing process. This works out favorably, as these are elements that can be controlled or adjusted to have an effect on yield, whereas the biological predictors can't be changed.
 
 ### (f)
 
@@ -254,6 +275,28 @@ As expected, the RMSE for the test set is higher than that of the training set (
 
 ```{r}
 
-
+# Iterate over top parameters
+for (p in rownames(dftop)) {
+    if (p != '(Intercept)') {  # do not include the intercept
+        plt <- dfchem2 %>%
+            ggplot()
+        if (p == 'ManufacturingProcess01' | p == 'ManufacturingProcess09') {  # these are quantitative variables
+            plt <- plt +
+                geom_point(aes(x=eval(sym(p)), y=Yield))
+        } else {  # these are categorical variables
+            plt <- plt +
+                geom_bar(aes(x=eval(sym(p)), y=Yield), stat='identity')
+        }
+        plt <- plt +
+            xlab(p)
+        print(plt)
+    }
+}
 
 ```
+
+* Based on the scatter plot for ManufacturingProcess09, it is evident that increasing this process consistently produces better yields; each unit increase in ManufacturingProcess09 will realize a 0.56-unit gain in yield.
+* The bar plot for ManufacturingProcess33 shows that optimal yields occur when ManufacturingProcess33 is around 64 units.
+* Likewise, yields are optimal when ManufacturingProcess34 is at 2.5 units.
+* If ManufacturingProcess41 is held at 0, the best yields are observed.
+* ManufacturingProcess01 is interesting in that there are three outliers that seemed to skew the results. Without knowing how the data was collected or what those values represent, it is difficult to say whether they should be removed, but from the scatter plot these likely should have been removed prior to modeling. But our interpretation of the problem was to perform the steps as given in the instructions; in a "real-life" scenario, a more rigorous exploration of the data would have been performed before modeling, likely resulting in removing these data points. Based on the small coefficient (0.09) for this predictor, the model interpreted the process to have a slight positive effect on yield.
