@@ -1,0 +1,259 @@
+---
+title: "ippolito_data624_wk4"
+author: "Michael Ippolito"
+date: "2023-06-19"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(kableExtra)
+library(mice)
+library(caret)
+library(corrplot)
+library(ggcorrplot)
+library(PerformanceAnalytics)
+library(MASS)  # for stepwise regression
+library(forecast)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## KJ 6.3
+
+**A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
+
+### (a) Start R and use these commands to load the data:
+
+    > library(AppliedPredictiveModeling)
+    > data(ChemicalManufacturingProcess)
+    
+**The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
+
+```{r}
+
+# Load data
+library(AppliedPredictiveModeling)
+data(ChemicalManufacturingProcess)
+
+```
+
+### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+
+We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
+
+```{r warning=FALSE}
+
+# Show missing value counts
+dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
+data.frame(Missing=colSums(is.na(dfchem))) %>%
+    filter(Missing > 0) %>%
+    kbl(caption='Missing value counts') %>%
+    kable_classic(full_width=F)
+
+# Use MICE to impute missing values
+imp <- mice(dfchem, printFlag=F)
+dfchem2 <- complete(imp)
+
+# Verify no more missing values exist
+print(paste0('Missing values after imputation: ', sum(is.na(dfchem2))))
+
+```
+
+### (c)
+
+**Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
+
+First, we'll choose a random seed for reproducible results. Then we'll split the data using createDataPartition(), which attempts to split the data in such a way that the training and test sets will an approximately proportionate distributions of the outcome variable.
+
+```{r}
+
+# Set seed
+set.seed(777)
+
+# Split into train/test; createDataPartition generates indicies of the training set
+train_indices <- createDataPartition(dfchem2$Yield, p=0.80, times=1, list=F)
+dftrain <- dfchem2[train_indices,]
+dftest <- dfchem2[-train_indices,]
+
+# Examine train and test sets
+hist(dftrain$Yield, main='Training set yield histogram')
+hist(dftest$Yield, main='Test set yield histogram')
+
+```
+
+Now we'll examine the predictors to look for correlations and examine their relationship to the outcome variable.
+
+```{r fig.width=14, fig.height=11}
+
+# Corr chart - not useful here because of the number of predictors
+# chart.Correlation(dftrain)
+
+# Corr plot
+corr1 <- cor(dftrain)
+corrplot(corr1, order='hclust', type='upper', diag=F)
+
+# Show candidates for removal
+print("Candidates for removal due to high correlation:")
+high_corr <- findCorrelation(corr1, cutoff=0.9, exact=T, verbose=F, names=F)
+colnames(dftrain[,high_corr])
+
+# Remove the highly correlated variables
+dftrain2 <- dftrain[,-high_corr]
+dftest2 <- dftest[,-high_corr]
+
+```
+
+Now we'll try modeling. First, prepare a data frame for the results, separate the outcome and predictor variables, and set cross-validation parameters.
+
+```{r}
+
+# Results data frame
+dfr <- data.frame(matrix(nrow=10, ncol=3))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
+# Separate outcome and predictors
+trainx <- dftrain2 %>% dplyr::select(-Yield)
+trainy <- dftrain2$Yield
+testx <- dftest2 %>% dplyr::select(-Yield)
+testy <- dftest2$Yield
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+```
+
+Linear regression
+
+```{r}
+
+# Linear model
+set.seed(77)
+fit <- train(x=trainx, y=trainy, method='lm', trControl=ctrl)
+fit
+dfr[1,] = data.frame(MOdel='LM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])
+
+# Stepwise linear model using MASS package/caret
+set.seed(77)
+stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
+fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
+fit
+dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fit$bestTune[['nvmax']]), RMSE=min(fit$results[['RMSE']]))
+
+```
+
+Robust linear regression
+
+```{r}
+
+# Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
+set.seed(77)
+#fit <- train(x=trainx, y=trainy, method='rlm', preprocess=c('center', 'scale', 'pca'), trControl=ctrl)
+#fit
+dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=NA)  # temp
+#dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])  # temp
+
+```
+
+Partial least squares
+
+```{r}
+
+# PLS, tuneLength=5
+set.seed(77)
+fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=5)
+fit
+dfr[4,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=5', RMSE=fit$results[['RMSE']])
+         
+# PLS, tunLength=20
+set.seed(77)
+fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=20)
+fit
+dfr[5,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=20', RMSE=fit$results[['RMSE']])
+         
+```
+
+Ridge regression
+
+```{r}
+
+# Ridge regression
+set.seed(77)
+ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
+fit <- train(x=trainx, y=trainy, method='ridge', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+fit
+dfr[6,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fit$bestTune[['lambda']]), RMSE=fit$results[['RMSE']])
+
+```
+
+Lasso regression
+
+```{r}
+
+# Ridge regression
+set.seed(77)
+enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+fit <- train(x=trainx, y=trainy, method='enet', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+fit
+dfr[7,] = data.frame(
+    Model='Lasso (enlastic net)', 
+    Tuning.Parameters=paste0('lambda=', fit$bestTune[['lambda']], ', fraction=', fit$bestTune[['fraction']]), 
+    RMSE=fit$results[['RMSE']]
+)
+
+```
+
+### (d)
+
+**Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
+
+The stepwise linear model with max parameters=9 was the best-performing model under training conditions. Calculate the accuracy based on the test test.
+
+```{r}
+
+# Rerun the model - stepwise linear model using MASS package/caret
+set.seed(77)
+stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
+fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
+
+# Generate y predictions
+predy <- predict(fit, newdata=testx)
+
+# Get accuracy results
+accuracy(predy, testy)
+
+```
+
+As expected, the RMSE for the test set is higher than that of the training set (1.335979 vs 1.225019, respectively). However, the test RMSE is only slightly higher. And the low MAPE value of 2.53 indicates good model performance.
+
+### (e)
+
+**Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
+
+```{r}
+
+
+
+```
+
+### (f)
+
+**Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
+
+```{r}
+
+
+
+```
