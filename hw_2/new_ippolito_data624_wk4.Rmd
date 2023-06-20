@@ -141,7 +141,7 @@ ctrl <- trainControl(method='cv', number=10)
 
 Linear regression
 
-```{r}
+```{r warning=FALSE}
 
 # Linear model
 set.seed(77)
@@ -160,7 +160,7 @@ dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fit$bestTune
 
 Robust linear regression
 
-```{r}
+```{r warning=FALSE}
 
 # Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
 set.seed(77)
@@ -173,7 +173,7 @@ dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=NA)  # temp
 
 Partial least squares
 
-```{r}
+```{r warning=FALSE}
 
 # PLS, tuneLength=5
 set.seed(77)
@@ -191,7 +191,7 @@ dfr[5,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=20', RMSE=fit$re
 
 Ridge regression
 
-```{r}
+```{r warning=FALSE}
 
 # Ridge regression
 set.seed(77)
@@ -204,7 +204,7 @@ dfr[6,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fit$best
 
 Lasso regression
 
-```{r}
+```{r warning=FALSE}
 
 # Ridge regression
 set.seed(77)
@@ -219,13 +219,24 @@ dfr[7,] = data.frame(
 
 ```
 
+```{r}
+
+# Model comparison
+dfr %>%
+    kbl(caption='Model comparison') %>%
+    kable_classic(full_width=F)
+
+```
+
+The stepwise linear model with max parameters=9 was the best-performing model under training conditions, with an RMSE of 1.255.
+
 ### (d)
 
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
-The stepwise linear model with max parameters=9 was the best-performing model under training conditions. Calculate the accuracy based on the test test.
+First, calculate the accuracy based on the test test.
 
-```{r}
+```{r warning=FALSE}
 
 # Rerun the model - stepwise linear model using MASS package/caret
 set.seed(77)
