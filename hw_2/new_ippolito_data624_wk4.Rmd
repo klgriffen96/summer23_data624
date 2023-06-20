@@ -164,10 +164,17 @@ Robust linear regression
 
 # Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
 set.seed(77)
-#fit <- train(x=trainx, y=trainy, method='rlm', preprocess=c('center', 'scale', 'pca'), trControl=ctrl)
-#fit
-dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=NA)  # temp
-#dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])  # temp
+# fit <- train(x=trainx, y=trainy, method='rlm', preprocess=c('center', 'scale', 'pca'), trControl=ctrl)
+
+## from Kayleahs
+testData_minus_yield <- trainx
+trans_test <- preProcess(testData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
+transformed_test <- predict(trans_test, testData_minus_yield)
+fit <- train(transformed_test, 
+                trainy, 
+                method = "rlm", preProcess = "pca", Control = ctrl)
+
+dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])  # temp
 
 ```
 
