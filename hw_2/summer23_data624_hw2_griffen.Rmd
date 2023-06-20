@@ -54,7 +54,7 @@ The matrix processPredictors contains the 57 predictors (12 describing the input
 ```{r}
 # impute 
 # https://www.rdocumentation.org/packages/DMwR2/versions/0.0.2/topics/knnImputation
-ChemicalManufacturingProcess_imputed <- knnImputation(ChemicalManufacturingProcess,k=3)
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
 ```
 
 (c) Split the data into a training and a test set, pre-process the data, and
@@ -69,13 +69,18 @@ First slit up the data.
 set.seed("09041996")
 
 ## Split training and test
-trainingIndex <- createDataPartition(ChemicalManufacturingProcess_imputed$Yield,
+i <- createDataPartition(cmp_i$Yield,
                                     p = 0.8,
                                     list = FALSE,
                                     times = 1)
 
-trainData <- ChemicalManufacturingProcess_imputed[trainingIndex,]
-testData <- ChemicalManufacturingProcess_imputed[-trainingIndex,]
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
 ```
 
 Next check the distributions and check for near zero variance and outliers.
@@ -84,25 +89,25 @@ Next check the distributions and check for near zero variance and outliers.
 ## Pre-process data
 
 # take a look at the distributions of predictors
-for (i in 2:length(trainData)){
-  p <- trainData |> ggplot(aes(x = trainData[[i]])) + geom_histogram()
-  print(p)
-}
-
-nzv <- nearZeroVar(trainData)
+# for (i in 1:length(data.train.x)){
+#   p <- data.train.x |> ggplot(aes(x = data.train.x[[i]])) + geom_histogram()
+#   print(p)
+# }
+# 
+# nzv <- nearZeroVar(data.train.x)
 # trainData <- trainData[-nzv]
-paste0("Inds near zero variance: ", colnames(trainData[nzv]))
+# paste0("Inds near zero variance: ", colnames(data.train.x[nzv]))
 
 # check for outliers
-for (i in 2:length(trainData)){
-  p <- trainData |> ggplot(aes(x = trainData[[i]])) + 
-    geom_boxplot() + xlab(colnames(trainData[i]))
-  print(p)
-}
+# for (i in 1:length(data.train.x)){
+#   p <- data.train.x |> ggplot(aes(x = data.train.x[[i]])) + 
+#     geom_boxplot() + xlab(colnames(data.train.x[i]))
+#   print(p)
+# }
 
 
-# for (i in 2:length(trainData)){
-#   data <- trainData[[i]]
+# for (i in 1:length(data.train.x)){
+#   data <- data.train.x[[i]]
 #   quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
 #   IQR <- IQR(data)
 #   Lower <- quartiles[1] - 1.5*IQR
@@ -110,12 +115,12 @@ for (i in 2:length(trainData)){
 #   outliers <- which(data < Lower | data > Upper)
 #   data[outliers] <- NA
 #   print(length(outliers))
-#   trainData[[i]] <- data
+#   data.train.x[[i]] <- data
 # }
 
-# for (i in 2:length(trainData)){
-#   p <- trainData |> ggplot(aes(x = trainData[[i]])) + 
-#     geom_boxplot() + xlab(colnames(trainData[i]))
+# for (i in 1:length(data.train.x)){
+#   p <- data.train.x |> ggplot(aes(x = data.train.x[[i]])) + 
+#     geom_boxplot() + xlab(colnames(data.train.x[i]))
 #   print(p)
 # }
 ```
@@ -127,21 +132,14 @@ Next check correlations between variables.
 ```{r, fig.height = 10, fig.width = 10, fig.align = "center"}
 
 # take a look at correlations
-# Filter for just quantitative vars
-train2 <- trainData |> select (-Yield)
 
-# for (i in 1:length(trainData)){
-#   p <- any(is.infinite(trainData[[i]]))
-#   print(p)
-# }
-
-train2_cor <- cor(train2)
+data.train.x.corr <- cor(data.train.x)
 
 # Corr chart
-corrplot(cor(train2_cor), method="number", order = "AOE", type = "lower", diag = FALSE, na.label = "?")
+corrplot(data.train.x.corr, order = "AOE", type = "lower", diag = FALSE)
 
 # Find correlations past cutoff
-print(paste0("Candidate for removal due to high correlation: ", findCorrelation(train2_cor, cutoff=0.8, exact=T, verbose=T, names=T)))
+print(paste0("Candidate for removal due to high correlation: ", findCorrelation(data.train.x.corr, cutoff=0.8, exact=T, verbose=T, names=T)))
 
 ```
 
@@ -149,26 +147,23 @@ Last check skewness.
 
 ```{r}
 # check skewness
-df<- describe(trainData) %>% select(skew)
-inds_for_log <- which(abs(df$skew) > 1)
-paste0("Inds skewed: ", colnames(trainData[inds_for_log]))
-# trainData[inds_for_log] <- log(trainData[inds_for_log])
+# df<- describe(data.train.x) %>% select(skew)
+# inds_for_log <- which(abs(df$skew) > 1)
+# paste0("Inds skewed: ", colnames(data.train.x[inds_for_log]))
 ```
 
 Try using preProcess for preProcessing.
 
 ```{r}
-trainData_minus_yield <- trainData[,colnames(trainData)[colnames(trainData) != 'Yield']]
-trans <- preProcess(trainData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
-transformed <- predict(trans, trainData_minus_yield)
+trans <- preProcess(data.train.x, method = c("center", "scale", "YeoJohnson", "nzv"))
+data.train.x.trans <- predict(trans, data.train.x)
 ```
 
 Now that the data is preprocessed, try a model.
 
 ```{r}
-transformed$yield <- trainData[,colnames(trainData)[colnames(trainData) == 'Yield']]
 
-lmFitAllPredictors <- lm(yield ~ ., data = transformed)
+lmFitAllPredictors <- lm(data.train.y ~ ., data = data.train.x.trans)
 summary(lmFitAllPredictors)# Model of choice 
 
 
@@ -176,8 +171,8 @@ summary(lmFitAllPredictors)# Model of choice
 
 ```{r}
 ctrl <- trainControl(method = "cv", number = 10)
-lmFit1 <- train(x = transformed[,colnames(transformed)[colnames(transformed) != 'yield']], 
-                y = transformed[,colnames(transformed)[colnames(transformed) == 'yield']], method = "lm", trControl = ctrl)
+lmFit1 <- train(x = data.train.x, 
+                y = data.train.y, method = "lm", trControl = ctrl)
 lmFit1$results
 ```
 
@@ -187,16 +182,18 @@ metric and how does this compare with the resampled performance metric
 on the training set?
 
 ```{r}
-testData_minus_yield <- testData[,colnames(testData)[colnames(testData) != 'Yield']]
-trans_test <- preProcess(testData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
-transformed_test <- predict(trans_test, testData_minus_yield)
+trans <- preProcess(data.test.x, method = c("center", "scale", "YeoJohnson", "nzv"))
+data.test.x.trans <- predict(trans, data.test.x)
 
-lm.pred = predict(lmFit1, transformed_test)
+lm.pred = predict(lmFit1, data.test.x)
 
-accuracy(lm.pred, testData[,colnames(testData)[colnames(testData) == 'Yield']])
+accuracy(lm.pred, data.test.y)
+```
 
-rlmPCA <- train(transformed[,colnames(transformed)[colnames(transformed) != 'yield']], 
-                transformed[,colnames(transformed)[colnames(transformed) == 'yield']], 
+
+```{r}
+rlmPCA <- train(data.train.x.trans, 
+                data.train.y, 
                 method = "rlm", preProcess = "pca", Control = ctrl)
 
 rlmPCA
@@ -219,7 +216,7 @@ inds_imp <- which(df_imp$importance$Overall > 60)
 rnames_imp <- rownames(df_imp$importance)[inds_imp]
 rnames_imp <- append(rnames_imp, "Yield")
 
-imp_cor <- cor(ChemicalManufacturingProcess_imputed[,c(rnames_imp)])
+imp_cor <- cor(cmp_i[,c(rnames_imp)])
 
 # Corr chart
 corrplot(cor(imp_cor), method="number", order = "AOE", type = "lower", diag = FALSE, na.label = "?")
