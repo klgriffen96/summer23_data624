@@ -1,0 +1,356 @@
+---
+title: 'Data 624: Predictive Analytics HW 2'
+author: "Kayleah Griffen"
+date: "5/21/2023"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+always_allow_html: true
+---
+
+## Introduction
+
+This homework assignment includes problems from:
+
+Kuhn & Johnson. "Applied Predictive Modeling"
+
+This accompanies readings from KJ Chapters 6, 7, and 8.
+
+Additionally a recommender problem was assigned by the professor.
+
+## Homework Solutions
+
+```{r}
+library(pls)
+library(caret)
+library(corrplot)
+library(caret)
+library(tidyverse)
+library(psych)
+library(imputeTS)
+library(forecast)
+library(AppliedPredictiveModeling)
+library(DMwR2)
+
+```
+
+### 6.3 
+
+A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately
+one hundred thousand dollars per batch:
+
+(a) Start R and use these commands to load the data:
+
+```{r}
+# book had lowercase C - need uppercase https://rdrr.io/rforge/AppliedPredictiveModeling/man/ChemicalManufacturingProcess.html
+data("ChemicalManufacturingProcess")
+```
+
+The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.
+
+(b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).
+
+```{r}
+# impute 
+# https://www.rdocumentation.org/packages/DMwR2/versions/0.0.2/topics/knnImputation
+ChemicalManufacturingProcess_imputed <- knnImputation(ChemicalManufacturingProcess,k=3)
+```
+
+(c) Split the data into a training and a test set, pre-process the data, and
+tune a model of your choice from this chapter. What is the optimal value
+of the performance metric?
+
+
+First slit up the data.
+
+
+```{r}
+set.seed("09041996")
+
+## Split training and test
+trainingIndex <- createDataPartition(ChemicalManufacturingProcess_imputed$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+trainData <- ChemicalManufacturingProcess_imputed[trainingIndex,]
+testData <- ChemicalManufacturingProcess_imputed[-trainingIndex,]
+```
+
+Next check the distributions and check for near zero variance and outliers.
+
+```{r, fig.height = 3, fig.width = 3, fig.align = "center"}
+## Pre-process data
+
+# take a look at the distributions of predictors
+for (i in 2:length(trainData)){
+  p <- trainData |> ggplot(aes(x = trainData[[i]])) + geom_histogram()
+  print(p)
+}
+
+nzv <- nearZeroVar(trainData)
+# trainData <- trainData[-nzv]
+paste0("Inds near zero variance: ", colnames(trainData[nzv]))
+
+# check for outliers
+for (i in 2:length(trainData)){
+  p <- trainData |> ggplot(aes(x = trainData[[i]])) + 
+    geom_boxplot() + xlab(colnames(trainData[i]))
+  print(p)
+}
+
+
+# for (i in 2:length(trainData)){
+#   data <- trainData[[i]]
+#   quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
+#   IQR <- IQR(data)
+#   Lower <- quartiles[1] - 1.5*IQR
+#   Upper <- quartiles[2] + 1.5*IQR 
+#   outliers <- which(data < Lower | data > Upper)
+#   data[outliers] <- NA
+#   print(length(outliers))
+#   trainData[[i]] <- data
+# }
+
+# for (i in 2:length(trainData)){
+#   p <- trainData |> ggplot(aes(x = trainData[[i]])) + 
+#     geom_boxplot() + xlab(colnames(trainData[i]))
+#   print(p)
+# }
+```
+
+**NOTE some variables had several outliers
+
+Next check correlations between variables.
+
+```{r, fig.height = 10, fig.width = 10, fig.align = "center"}
+
+# take a look at correlations
+# Filter for just quantitative vars
+train2 <- trainData |> select (-Yield)
+
+# for (i in 1:length(trainData)){
+#   p <- any(is.infinite(trainData[[i]]))
+#   print(p)
+# }
+
+train2_cor <- cor(train2)
+
+# Corr chart
+corrplot(cor(train2_cor), method="number", order = "AOE", type = "lower", diag = FALSE, na.label = "?")
+
+# Find correlations past cutoff
+print(paste0("Candidate for removal due to high correlation: ", findCorrelation(train2_cor, cutoff=0.8, exact=T, verbose=T, names=T)))
+
+```
+
+Last check skewness.
+
+```{r}
+# check skewness
+df<- describe(trainData) %>% select(skew)
+inds_for_log <- which(abs(df$skew) > 1)
+paste0("Inds skewed: ", colnames(trainData[inds_for_log]))
+# trainData[inds_for_log] <- log(trainData[inds_for_log])
+```
+
+Try using preProcess for preProcessing.
+
+```{r}
+trainData_minus_yield <- trainData[,colnames(trainData)[colnames(trainData) != 'Yield']]
+trans <- preProcess(trainData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
+transformed <- predict(trans, trainData_minus_yield)
+```
+
+Now that the data is preprocessed, try a model.
+
+```{r}
+transformed$yield <- trainData[,colnames(trainData)[colnames(trainData) == 'Yield']]
+
+lmFitAllPredictors <- lm(yield ~ ., data = transformed)
+summary(lmFitAllPredictors)# Model of choice 
+
+
+```
+
+```{r}
+ctrl <- trainControl(method = "cv", number = 10)
+lmFit1 <- train(x = transformed[,colnames(transformed)[colnames(transformed) != 'yield']], 
+                y = transformed[,colnames(transformed)[colnames(transformed) == 'yield']], method = "lm", trControl = ctrl)
+lmFit1$results
+```
+
+
+(d) Predict the response for the test set. What is the value of the performance
+metric and how does this compare with the resampled performance metric
+on the training set?
+
+```{r}
+testData_minus_yield <- testData[,colnames(testData)[colnames(testData) != 'Yield']]
+trans_test <- preProcess(testData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
+transformed_test <- predict(trans_test, testData_minus_yield)
+
+lm.pred = predict(lmFit1, transformed_test)
+
+accuracy(lm.pred, testData[,colnames(testData)[colnames(testData) == 'Yield']])
+
+rlmPCA <- train(transformed[,colnames(transformed)[colnames(transformed) != 'yield']], 
+                transformed[,colnames(transformed)[colnames(transformed) == 'yield']], 
+                method = "rlm", preProcess = "pca", Control = ctrl)
+
+rlmPCA
+
+```
+
+(e) Which predictors are most important in the model you have trained? Do
+either the biological or process predictors dominate the list?
+
+```{r}
+df_imp <- varImp(lmFit1)
+df_imp
+```
+
+(f) Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future
+runs of the manufacturing process?
+
+```{r}
+inds_imp <- which(df_imp$importance$Overall > 60)
+rnames_imp <- rownames(df_imp$importance)[inds_imp]
+rnames_imp <- append(rnames_imp, "Yield")
+
+imp_cor <- cor(ChemicalManufacturingProcess_imputed[,c(rnames_imp)])
+
+# Corr chart
+corrplot(cor(imp_cor), method="number", order = "AOE", type = "lower", diag = FALSE, na.label = "?")
+
+```
+
+### 7.2
+
+Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+
+y = 10 sin(πx1x2) + 20(x3 − 0.5)2 + 10x4 + 5x5 + N(0, σ2)
+
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package mlbench contains a function called mlbench.friedman1 that simulates these data:
+
+```{r}
+library(mlbench)
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x <- data.frame(trainingData$x)
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+
+```
+
+Tune several models on these data. For example:
+
+```{r}
+library(caret)
+knnModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "knn",
+                    preProc = c("center", "scale"),
+                    tuneLength = 10)
+knnModel
+
+knnPred <- predict(knnModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+postResample(pred = knnPred, obs = testData$y)
+
+```
+
+Which models appear to give the best performance? Does MARS select the
+informative predictors (those named X1–X5)?
+
+### 7.5
+
+Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+(a) Which nonlinear regression model gives the optimal resampling and test  set performance?
+
+(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+(c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+### 8.1
+
+Recreate the simulated data from Exercise 7.2
+
+```{r}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+
+(a) Fit a random forest model to all of the predictors, then estimate the
+variable importance scores:
+
+```{r}
+library(randomForest)
+library(caret)
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+
+```
+
+Did the random forest model significantly use the uninformative predictors (V6 – V10)?
+
+(b) Now add an additional predictor that is highly correlated with one of the
+informative predictors. For example:
+
+```{r}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+
+Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+
+(c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+(d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+### 8.2
+
+Use a simulation to show tree bias with different granularities.
+
+
+### 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+(a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+(b) Which model do you think would be more predictive of other samples?
+
+(c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+### 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+(a) Which tree-based regression model gives the optimal resampling and test
+set performance?
+
+(b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+(c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+### Recommender Problem
