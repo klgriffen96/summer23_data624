@@ -35,7 +35,9 @@ theme_set(theme_minimal())
 
 **A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
 
-### (a) Start R and use these commands to load the data:
+### (a)
+
+**Start R and use these commands to load the data:**
 
     > library(AppliedPredictiveModeling)
     > data(ChemicalManufacturingProcess)
@@ -50,7 +52,9 @@ data(ChemicalManufacturingProcess)
 
 ```
 
-### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+### (b)
+
+**A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).**
 
 We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
 
