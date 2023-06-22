@@ -1,6 +1,6 @@
 ---
-title: "ippolito_data624_wk4"
-author: "Michael Ippolito"
+title: "Data 624: Predictive Analytics HW:2"
+author: "Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden"
 date: "2023-06-19"
 output:
   html_document:
