@@ -181,8 +181,7 @@ postResample(pred = knnPred, obs = testData$y)
 
 ```
 
-Which models appear to give the best performance? Does MARS select the
-informative predictors (those named X1–X5)?
+Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
 
 ### 7.5
 
@@ -208,8 +207,7 @@ colnames(simulated)[ncol(simulated)] <- "y"
 ```
 
 
-(a) Fit a random forest model to all of the predictors, then estimate the
-variable importance scores:
+(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores:
 
 ```{r}
 library(randomForest)
@@ -223,8 +221,7 @@ rfImp1 <- varImp(model1, scale = FALSE)
 
 Did the random forest model significantly use the uninformative predictors (V6 – V10)?
 
-(b) Now add an additional predictor that is highly correlated with one of the
-informative predictors. For example:
+(b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
 
 ```{r}
 simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
