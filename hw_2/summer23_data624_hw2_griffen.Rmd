@@ -192,11 +192,11 @@ accuracy(lm.pred, data.test.y)
 
 
 ```{r}
-rlmPCA <- train(data.train.x.trans, 
-                data.train.y, 
-                method = "rlm", preProcess = "pca", Control = ctrl)
-
-rlmPCA
+# rlmPCA <- train(data.train.x.trans, 
+#                 data.train.y, 
+#                 method = "rlm", preProcess = "pca", Control = ctrl)
+# 
+# rlmPCA
 
 ```
 
@@ -264,12 +264,97 @@ knnModel
 knnPred <- predict(knnModel, newdata = testData$x)
 ## The function 'postResample' can be used to get the test set
 ## perforamnce values
-postResample(pred = knnPred, obs = testData$y)
+p.knn <- postResample(pred = knnPred, obs = testData$y)
 
 ```
 
-Which models appear to give the best performance? Does MARS select the
-informative predictors (those named X1–X5)?
+
+Next try neural network.
+
+```{r}
+
+# remove predictors so absolute pairwise correlation is less than 0.75
+
+tooHigh <- findCorrelation(cor(trainingData$x), cutoff = .75)
+
+# no correlations greater than 0.75! 
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1), .size = c(1:10), .bag = FALSE)
+
+nnetModel <- train(x = trainingData$x, 
+                    y = trainingData$y,
+                   method = "avNNet",
+                   tuneGrid = nnetGrid,
+                   trControl = trainControl(method = "cv"),
+                   preProc = c("center", "scale"),
+                   linout = TRUE,
+                   trace = FALSE,
+                   MaxNWts = 10 * (ncol(trainingData$x) + 1) + 10 + 1,
+                   maxit = 500)
+
+# nnetModel
+
+nnetPredict <- predict(nnetModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.nnet <- postResample(pred = nnetPredict, obs = testData$y)
+
+```
+
+Next try MARS. 
+
+```{r}
+
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+MARSModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "earth",
+                    tuneGrid = marsGrid,
+                    trControl = trainControl(method = "cv"))
+
+MARSModel
+
+MARSPred <- predict(MARSModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.MARS <- postResample(pred = MARSPred, obs = testData$y)
+
+varImp(MARSModel)
+
+```
+
+Next try SVM.
+
+```{r}
+svmModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "svmRadial",
+                    preProc = c("center", "scale"),
+                  tuneLength = 14,
+                  trControl = trainControl(method = "cv"))
+svmModel
+
+svmPred <- predict(svmModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.svm <- postResample(pred = svmPred, obs = testData$y)
+
+```
+
+
+Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+
+MARS did select the informative predictor, but one thing to note is it eliminated X3.
+
+```{r}
+p.knn
+p.nnet
+p.MARS
+p.svm
+```
+
+The best rquared was from the MARS model along with the best RMSE and MAE.
 
 ### 7.5
 
