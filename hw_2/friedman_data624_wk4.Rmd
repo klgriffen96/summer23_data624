@@ -175,32 +175,50 @@ dfr[1,] = data.frame(
     Model='Elastic net', 
     Tuning.Parameters=
       paste0('lambda=', enet_fit$bestTune[['lambda']], ', fraction=', enet_fit$bestTune[['fraction']]), 
-    Train.RMSE=enet_fit$results[['RMSE']],
+    Train.RMSE=enet_fit$results[['RMSE']] %>% round(2),
     Test.RMSE=enet_acc[[2]] %>% round(2) #RMSE for test set
 )
 
 dfr %>% kable(digits = 2)
 ```
 
-The RMSE for the test set is very slightly higher than that of the training set (`{r} dfr[[4]]` vs `{r} dfr[[3]]`, respectively). This indicates good model fit and a lack of overfitting.
+The RMSE for the test set is very slightly higher than that of the training set (`r dfr[[4]]` vs `r dfr[[3]]`, respectively). This indicates good model fit and a lack of overfitting.
 
 ### (e)
 
 **Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
 
+Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
+
+
 ```{r KJ_6.3e}
+# reference http://topepo.github.io/caret/variable-importance.html
+enetImp <- varImp(enet_fit, scale = T)
+threhold <- 70
+top <- enetImp$importance %>% subset(enetImp$importance$Overall > threhold)
+top <- data.frame(Predictor = row.names(top), Scaled.Importance = top$Overall %>% round(0)) 
+top %>% arrange(desc(Scaled.Importance))
 
 ```
 
-It's very challenging to understand the relative importance of predictors in a methodology that chooses predictors based n performance, especially when many features are highly correlated. 
 
-(See, for examplem (https://stats.stackexchange.com/questions/403303/how-to-interpret-metric-lasso-regression-coefficients)[https://stats.stackexchange.com/questions/403303/how-to-interpret-metric-lasso-regression-coefficients])
 
 
 ### (f)
 
 **Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
 
+The approach is to subset the most important factors and then plot the data versus the yield. This could be heplful in identifying which processes to optimize to improve yield, especially in relationship to the cost associated with any changes.
 ```{r KJ_6.3f}
+# Subset most important features
+long <- dfchem[c(top$Predictor, "Yield")] %>% gather(key, value, -Yield)
+
+ggplot(data = long, aes(x=value, y=Yield)) + geom_point() + geom_smooth(method = "lm") + facet_wrap(~key, scales = "free")
+
+library(corrplot)
+cor(dfchem[c(top$Predictor, "Yield")]) %>% corrplot()
 ```
+* Manufacturing Process 32 has the most impact, and so would be a good place to start.
+* All of the biological processes are highly correlated, which may or may mean that they can substituted for each other or that they are inherently related.
+* Manufacturing Process 13 and 36 have a negative impact on Yield, while all the other top factors ahave a positive releationship withe Yield.
 
