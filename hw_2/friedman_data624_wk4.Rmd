@@ -1,7 +1,7 @@
 ---
-title: "ippolito_data624_wk4"
-author: "Michael Ippolito"
-date: "2023-06-19"
+title: "friedman_data624_wk4"
+author: "Alice Friedman"
+date: "2023-06-25"
 output:
   html_document:
     theme: yeti
@@ -15,7 +15,7 @@ output:
 
 ```{r setup, include=FALSE, warning=FALSE}
 
-knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, warning = F, message = F)
+knitr::opts_chunk$set(echo=TRUE, warning = F, message = F)
 library(tidyverse)
 library(kableExtra)
 library(mice)
@@ -111,210 +111,96 @@ grid.arrange(plot1, plot2, ncol = 2)
 
 Now we'll examine the predictors to look for correlations and examine their relationship to the outcome variable.
 
-```{r fig.width=14, fig.height=11}
+```{r KJ_6.3c_correlation}
+# Calculate the correlation matrix
+corr_matrix <- cor(dftrain)
 
-# Corr chart - not useful here because of the number of predictors
-# chart.Correlation(dftrain)
+# Set threshold
+cutoff <- 0.8
 
-# Corr plot
-corr1 <- cor(dftrain)
-corrplot(corr1, order='hclust', type='upper', diag=F)
+# Reshape, find candidates for removal
+filtered_corr_long <- reshape2::melt(corr_matrix) %>% dplyr::filter(abs(value) > cutoff & value !=1)
+filtered_corr <- reshape2::dcast(filtered_corr_long, Var1 ~ Var2)
 
-# Show candidates for removal
-print("Candidates for removal due to high correlation:")
-high_corr <- findCorrelation(corr1, cutoff=0.9, exact=T, verbose=F, names=F)
-colnames(dftrain[,high_corr])
 
-# Remove the highly correlated variables
-dftrain2 <- dftrain[,-high_corr]
-dftest2 <- dftest[,-high_corr]
+# Plot the correlation matrix heatmap
+ggplot(data = filtered_corr_long, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(title = "Correlation Matrix Heatmap Highly Correlated Variable") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
 
-Now we'll try modeling. First, prepare a data frame for the results, separate the outcome and predictor variables, and set cross-validation parameters.
+Because a large number of variables are highly correlated, a modeling technique which is robust to correlated variables is preferred, or else one feature of the highly correlated pair should be dropped. For this reason I will tune elastic net, which can handle multicollinearity.
 
-```{r}
-
+```{r KJ_6.3c_model}
 # Results data frame
-dfr <- data.frame(matrix(nrow=10, ncol=3))
-colnames(dfr) <- c('Model', 'Tuning.Parameters', 'RMSE')
+dfr <- data.frame(matrix(nrow=1, ncol=4))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'Train.RMSE', 'Test.RMSE')
 
 # Separate outcome and predictors
-trainx <- dftrain2 %>% dplyr::select(-Yield)
-trainy <- dftrain2$Yield
-testx <- dftest2 %>% dplyr::select(-Yield)
-testy <- dftest2$Yield
+trainx <- dftrain %>% dplyr::select(-Yield)
+trainy <- dftrain$Yield
+testx <- dftest %>% dplyr::select(-Yield)
+testy <- dftest$Yield
 
 # specify 10x cross-validation
-ctrl <- trainControl(method='cv', number=10)
+ctrl <- caret::trainControl(method='cv', number=10) # caret package
 
-```
-
-Linear regression
-
-```{r warning=FALSE}
-
-# Linear model
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='lm', trControl=ctrl)
-fit
-dfr[1,] = data.frame(MOdel='LM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])
-
-# Stepwise linear model using MASS package/caret
-set.seed(77)
-stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
-fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
-fit
-dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fit$bestTune[['nvmax']]), RMSE=min(fit$results[['RMSE']]))
-
-```
-
-Robust linear regression
-
-```{r warning=FALSE}
-
-# Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
-set.seed(77)
-# fit <- train(x=trainx, y=trainy, method='rlm', preprocess=c('center', 'scale', 'pca'), trControl=ctrl)
-
-## from Kayleahs
-testData_minus_yield <- trainx
-trans_test <- preProcess(testData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
-transformed_test <- predict(trans_test, testData_minus_yield)
-fit <- train(transformed_test, 
-                trainy, 
-                method = "rlm", preProcess = "pca", Control = ctrl)
-
-dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])  # temp
-
-```
-
-Partial least squares
-
-```{r warning=FALSE}
-
-# PLS, tuneLength=5
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=5)
-fit
-dfr[4,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=5', RMSE=fit$results[['RMSE']])
-         
-# PLS, tunLength=20
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=20)
-fit
-dfr[5,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=20', RMSE=fit$results[['RMSE']])
-         
-```
-
-Ridge regression
-
-```{r warning=FALSE}
-
-# Ridge regression
-set.seed(77)
-ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
-fit <- train(x=trainx, y=trainy, method='ridge', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
-fit
-dfr[6,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fit$bestTune[['lambda']]), RMSE=fit$results[['RMSE']])
-
-```
-
-Lasso regression
-
-```{r warning=FALSE}
-
-# Ridge regression
-set.seed(77)
+# elastic net regression
 enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
-fit <- train(x=trainx, y=trainy, method='enet', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
-fit
-dfr[7,] = data.frame(
-    Model='Lasso (enlastic net)', 
-    Tuning.Parameters=paste0('lambda=', fit$bestTune[['lambda']], ', fraction=', fit$bestTune[['fraction']]), 
-    RMSE=fit$results[['RMSE']]
-)
+enet_fit <- train(x=trainx, y=trainy, method='enet', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+enet_fit %>% plot()
 
 ```
 
-```{r}
-
-# Model comparison
-dfr %>%
-    kbl(caption='Model comparison') %>%
-    kable_classic(full_width=F)
-
-```
-
-The stepwise linear model with max parameters=9 was the best-performing model under training conditions, with an RMSE of 1.255.
 
 ### (d)
 
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
-First, calculate the accuracy based on the test test.
+First, calculate the accuracy based on the test set.
 
-```{r warning=FALSE}
-
-# Rerun the model - stepwise linear model using MASS package/caret
-set.seed(77)
-stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
-fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
+```{r KJ_6.3d}
 
 # Generate y predictions
-predy <- predict(fit, newdata=testx)
+predy <- predict(enet_fit, newdata=testx)
 
 # Get accuracy results
-accuracy(predy, testy)
+enet_acc <- accuracy(predy, testy)
 
+dfr[1,] = data.frame(
+    Model='Elastic net', 
+    Tuning.Parameters=
+      paste0('lambda=', enet_fit$bestTune[['lambda']], ', fraction=', enet_fit$bestTune[['fraction']]), 
+    Train.RMSE=enet_fit$results[['RMSE']],
+    Test.RMSE=enet_acc[[2]] %>% round(2) #RMSE for test set
+)
+
+dfr %>% kable(digits = 2)
 ```
 
-As expected, the RMSE for the test set is higher than that of the training set (1.335979 vs 1.225019, respectively). However, the test RMSE is only slightly higher, and the low MAPE value of 2.53 indicates good model performance.
+The RMSE for the test set is very slightly higher than that of the training set (`{r} dfr[[4]]` vs `{r} dfr[[3]]`, respectively). This indicates good model fit and a lack of overfitting.
 
 ### (e)
 
 **Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
 
-```{r}
-
-# Extract coefficients from model
-dftop <- data.frame(Coefficient=coef(fit$finalModel, fit$bestTune[['nvmax']] + 1))
-dftop %>%
-    kbl(caption='Model coefficients') %>%
-    kable_classic(full_width=F)
+```{r KJ_6.3e}
 
 ```
 
-As shown, the five most important variables are all those related to the manufacturing process. This works out favorably, as these are elements that can be controlled or adjusted to have an effect on yield, whereas the biological predictors can't be changed.
+It's very challenging to understand the relative importance of predictors in a methodology that chooses predictors based n performance, especially when many features are highly correlated. 
+
+(See, for examplem (https://stats.stackexchange.com/questions/403303/how-to-interpret-metric-lasso-regression-coefficients)[https://stats.stackexchange.com/questions/403303/how-to-interpret-metric-lasso-regression-coefficients])
+
 
 ### (f)
 
 **Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
 
-```{r}
-
-# Iterate over top parameters
-for (p in rownames(dftop)) {
-    if (p != '(Intercept)') {  # do not include the intercept
-        plt <- dfchem2 %>%
-            ggplot()
-        if (p == 'ManufacturingProcess01' | p == 'ManufacturingProcess09') {  # these are quantitative variables
-            plt <- plt +
-                geom_point(aes(x=eval(sym(p)), y=Yield))
-        } else {  # these are categorical variables
-            plt <- plt +
-                geom_bar(aes(x=eval(sym(p)), y=Yield), stat='identity')
-        }
-        plt <- plt +
-            xlab(p)
-        print(plt)
-    }
-}
-
+```{r KJ_6.3f}
 ```
 
-* Based on the scatter plot for ManufacturingProcess09, it is evident that increasing this process consistently produces better yields; each unit increase in ManufacturingProcess09 will realize a 0.56-unit gain in yield.
-* The bar plot for ManufacturingProcess33 shows that optimal yields occur when ManufacturingProcess33 is around 64 units.
-* Likewise, yields are optimal when ManufacturingProcess34 is at 2.5 units.
-* If ManufacturingProcess41 is held at 0, the best yields are observed.
-* ManufacturingProcess01 is interesting in that there are three outliers that seemed to skew the results. Without knowing how the data was collected or what those values represent, it is difficult to say whether they should be removed, but from the scatter plot these likely should have been removed prior to modeling. But our interpretation of the problem was to perform the steps as given in the instructions; in a "real-life" scenario, a more rigorous exploration of the data would have been performed before modeling, likely resulting in removing these data points. Based on the small coefficient (0.09) for this predictor, the model interpreted the process to have a slight positive effect on yield.
