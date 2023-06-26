@@ -390,10 +390,12 @@ model1 <- randomForest(y ~ ., data = simulated,
                        importance = TRUE,
                        ntree = 1000)
 rfImp1 <- varImp(model1, scale = FALSE)
-
+rfImp1
 ```
 
 Did the random forest model significantly use the uninformative predictors (V6 – V10)?
+
+The random forest model did not signifigantly use the uninformative predictors - all of their importance was less than a magnitude of 0.2.
 
 (b) Now add an additional predictor that is highly correlated with one of the
 informative predictors. For example:
@@ -405,14 +407,71 @@ cor(simulated$duplicate1, simulated$V1)
 
 Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
 
+```{r}
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+rfImp2
+```
+
+The variable importance of V1 went from 8.732235404	to 5.69119973, and the importance of the duplicate1 variable is 4.28331581. So effectively the variable importance is split between the two correlated variables. 
+
 (c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
+```{r}
+library(party)
+
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+
+model_forest <- cforest(y ~ ., data = simulated)
+
+varimp(model_forest, conditional = TRUE)
+varimp(model_forest, conditional = FALSE)
+
+```
+
+These importances do show the same pattern of the random forest model where variables V1-V5 (except V3) have larger coefficients than V6-V10.
+
 (d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+```{r}
+library(tidyverse)
+gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
+                       n.trees = seq(100, 1000, by = 50),
+                       shrinkage = c(0.01, 0.1),
+                       n.minobsinnode = 1)
+set.seed(100)
+sim_x <- simulated |> select(-y)
+gbmTune <- train(sim_x, simulated$y, method = "gbm", tuneGrid = gbmGrid, verbose = FALSE)
+```
 
 ### 8.2
 
 Use a simulation to show tree bias with different granularities.
 
+Basic regression trees "suffer from selection bias: predictors with a higher number of distinct values are favored over more granular predictors" [pg. 182]. The book notes that Loh and Shih explain that if a noisy variable has more splits than an informative variable - it still may be chosen over the informative variable just because it has higher resolution. 
+
+To illustrate this concept, we can built a dataset that has predictors with different granularities, choose a subset to be used in creating a model and then see if the model picks the actual predictive predictors or just the noisy ones.
+
+```{r}
+library(rpart)
+p1 <- rep(1,100)
+x <- c(1,2)
+p2 <- rep(x,50)
+p3 <- rnorm(100, mean = 1000, sd = 200)
+y <- p1 * p2 + rnorm(100)
+
+df <- data.frame(p1 = p1, p2= p2, p3 = p3, y = y)
+
+rpartTree <- rpart(y ~ ., data = df)
+varImp(rpartTree)
+```
+The granularity of p1, there is only 1 distinct value, then for p2 there is only 2 distinct values and for p3 there are many distinct values. The variable importance of p3 is the highest. I think this is because it is picking up on the random noise. 
 
 ### 8.3
 
