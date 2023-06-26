@@ -222,9 +222,10 @@ cat(sprintf("The optimal fraction to minimize the RMSE is %f\nThe lambda to mini
             optimal.rmse))
 ```
 
-The elastic net had the lower RMSE.
+The elastic net had the lower RMSE for the training data.
 
 ```{r}
+plot(plsTune)
 
 plot(enetTune)
 
@@ -247,6 +248,8 @@ postResample(preds, data.test.y$Yield)
 
 The RMSE value approximately the same in the test set as on the training set for both, but the RMSE was lower for the PLS than the elastic net on the test data.
 
+We can check out the residuals for the pls.
+
 ```{r}
 plot(residuals(plsTune), ylab='residuals')
 abline(h = 0, col = 'red')
@@ -258,7 +261,7 @@ The residuals appear to be random and centered around mean zero. The model appea
 
 **Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
 
-To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
+To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables for the pls tuned model, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
 
 ```{r}
 
