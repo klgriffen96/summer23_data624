@@ -1,0 +1,778 @@
+---
+title: "DATA 624 HW5"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(mlbench)
+library(caret)
+library(earth)
+library(kernlab)
+library(kableExtra)
+library(AppliedPredictiveModeling)
+library(corrplot)
+library(randomForest)
+library(party)
+library(gbm)
+library(Cubist)
+library(rpart)
+library(gridExtra)
+library(doParallel)
+library(rpart.plot)
+library(rattle)
+```
+
+# 7.2
+
+## (a)
+
+Friedman (1991) introduced several benchmark data sets created by simulation. One of these simulations used the following nonlinear equation to create data:
+
+$y = 10sin(\pi x_1x_2) + 20(x_3 - 0.5)^2 + 10x_4 + 5x_5 + N(0, \sigma^2)$
+
+where the $x$ values are random variables uniformly distributed between $[0,1]$ (there are also 5 other non-informative variables also created in the simulation). The package `mlbench` contains a function called `mlbench.friedman1` that simulates these data:
+
+```{r}
+# number of cores for parallel processing
+num_cores <- 4
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+set.seed(200)
+
+trainingData <- mlbench.friedman1(200, sd=1)
+## we convert the 'x' data from a matrix to a dataframe
+## one reason is that this will give the columns names 
+trainingData$x <- data.frame(trainingData$x)
+## look at the data using 
+featurePlot(trainingData$x, trainingData$y)
+## or other methods
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to 
+## estimate the true error rate with good precision
+testData <- mlbench.friedman1(5000, sd=1)
+testData$x <- data.frame(testData$x)
+```
+
+Tune several models on these data. For example:
+
+```{r, cache=TRUE}
+knnModel <- train(x = trainingData$x,
+                  y = trainingData$y,
+                  method = "knn",
+                  preProc = c("center","scale"),
+                  tuneLength = 10)
+
+knnModel
+```
+
+```{r}
+knnPred <- predict(knnModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set 
+## performance values 
+knn.results <- postResample(pred = knnPred, obs = testData$y)
+knn.results
+```
+
+Which models appear to give the best performance? Does MARS select the informative predictors (those named x1-x5)?
+
+### NEURAL NETWORK MODEL
+
+First we remove predcictors to ensure that the maximum absolute pairwise correlation between the predictors is less than 0.75,
+
+```{r}
+findCorrelation(cor(trainingData$x), cutoff = .75)
+```
+
+No predictors exceed a pairwise correlation of .75 or greater. Next, we create a specific candidate set of models to evaluate:
+
+```{r, warning = FALSE, message = FALSE, cache = TRUE}
+# specify and store the resampling method
+ctrl <- trainControl(method = "cv", 
+                     allowParallel = TRUE,
+                     number = 10)
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1),
+                        .size = c(1:10),
+                        .bag = FALSE)
+
+set.seed(100) 
+nnetTune <- train(trainingData$x, trainingData$y,
+                  method = "avNNet",
+                  tuneGrid = nnetGrid,
+                  trControl = ctrl,
+                  preProc = c("center","scale"),
+                  linout = TRUE,
+                  trace = FALSE,
+                  MaxNwts = 10 * (ncol(trainingData$x) +  1) + 10 + 1,
+                  maxit = 500)
+
+nnetTune
+```
+
+```{r}
+nnetPred <- predict(nnetTune, newdata = testData$x)
+nnet.results <- postResample(pred = nnetPred, obs = testData$y)
+nnet.results
+```
+
+### MARS MODEL (Multivariate Adaptive Regression Splines)
+
+```{r, message=FALSE, warning=FALSE, cache = TRUE}
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+set.seed(100)
+
+marsTuned <- train(trainingData$x, trainingData$y,
+                   method = "earth",
+                   # Explicitly declare the candidate models to test,
+                   tuneGrid = marsGrid,
+                   trControl = ctrl)
+
+marsTuned
+```
+
+Viewing the most important variables,
+
+```{r}
+varImp(marsTuned)
+```
+
+```{r, cache = TRUE}
+marsPred <- predict(marsTuned, newdata = testData$x)
+mars.results <- postResample(pred = marsPred, obs = testData$y)
+mars.results
+```
+
+### SVM (Support Vector Machines)
+
+```{r, cache = TRUE}
+svmRTuned <- train(trainingData$x, trainingData$y,
+                  method = "svmRadial",
+                  preProcess = c("center","scale"),
+                  tuneLength = 14,
+                  trControl = ctrl)
+
+svmRTuned
+```
+
+```{r, cache = TRUE}
+svmRPred <- predict(svmRTuned, newdata = testData$x)
+svm.results <- postResample(pred = svmRPred, obs = testData$y)
+svm.results
+```
+
+Now we can compare the final results,
+
+```{r}
+rbind("nnet" = nnet.results,
+      "mars" = mars.results,
+      "svm" = svm.results,
+      "knn" = knn.results) |>
+  kable()
+```
+
+The MARS model performs best according to the RMSE.
+
+```{r}
+varImp(marsTuned)
+```
+
+The MARS model does indeed select X1-X5 as the most informative variables!
+
+# 7.5
+
+Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+### Pre-processing
+
+```{r, warning=FALSE, message=FALSE, cache=TRUE}
+data("ChemicalManufacturingProcess")
+cmp <- ChemicalManufacturingProcess
+
+set.seed(100)
+trans <- preProcess(cmp, 
+                   method = c("BoxCox", "knnImpute", "center", "scale"))
+
+# apply the transformed data
+df <- predict(trans, cmp)
+df$Yield <- cmp$Yield
+
+# split the data into training and testing sets
+trainRows <- createDataPartition(df$Yield, p = .80, list = FALSE)
+train.set <- df[trainRows, ]
+test.set <- df[-trainRows, ]
+
+# set aside predictors and response 
+train.x <- train.set |> select(-Yield)
+train.y <- train.set$Yield
+test.x <- test.set |> select(-Yield)
+test.y<- test.set$Yield
+```
+
+### Training Models
+
+#### KNN MODEL
+
+```{r, warning = FALSE, message = FALSE, cache = TRUE}
+set.seed(100)
+knnTuned <- train(train.x, train.y,
+                  method = "knn",
+                  preProcess = c("center","scale"),
+                  tuneLength = 10,
+                  trControl = ctrl)
+
+knnPred <- predict(knnTuned, test.x)
+knn.results <- postResample(knnPred, test.y)
+```
+
+#### NEURAL NETWORK MODEL
+
+```{r, cache = TRUE}
+tooHigh <- findCorrelation(cor(train.x), cutoff = .75)
+trainXnnet <- train.x[, -tooHigh]
+testXnnet <- test.x[, -tooHigh]
+
+set.seed(100)
+nnetGrid <- expand.grid(size = c(1:10),
+                        decay = c(0, 0.01, 0.1),
+                        bag = FALSE)
+
+nnetTuned <- train(trainXnnet, train.y,
+                  method = "avNNet",
+                  tuneGrid = nnetGrid,
+                  trControl = ctrl,
+                  preProc = c("center","scale"),
+                  linout = TRUE,
+                  trace = FALSE,
+                  MaxNWts = 10 * (ncol(trainXnnet) + 1) + 10 + 1,
+                  maxit = 500)
+
+nnetPred <- predict(nnetTuned, testXnnet)
+nnet.results <- postResample(nnetPred, test.y)
+```
+
+#### MARS MODEL
+
+```{r, cache = TRUE}
+mars.grid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+set.seed(100)
+marsTuned <- train(train.x, train.y,
+                   method = "earth",
+                   preProc = c("center","scale"),
+                   tuneGrid = marsGrid,
+                   trControl = ctrl)
+
+marsPred <- predict(marsTuned, test.x)
+mars.results <- postResample(marsPred, test.y)
+```
+
+#### SVM MODEL
+
+```{r, cache = TRUE}
+set.seed(100)
+svmRTuned <- train(train.x, train.y,
+                   method = "svmRadial",
+                   preProc = c("center","scale"),
+                   tuneLength = 14,
+                   trControl = ctrl)
+
+svmRPred <- predict(svmRTuned, test.x)
+svm.results <- postResample(svmRPred, test.y)
+```
+
+## (a)
+
+Which nonlinear regression model gives the optimal resampling and test set performance?
+
+```{r, cache = TRUE}
+rbind("nnet" = postResample(predict(nnetTuned), train.y),
+      "mars" = postResample(predict(marsTuned), train.y),
+      "svm" = postResample(predict(svmRTuned), train.y),
+      "knn" = postResample(predict(knnTuned), train.y)) |>
+  kable(caption = "Resampling Performance")
+```
+
+The SVM model has the best resampling performance.
+
+```{r, cache = TRUE}
+rbind("nnet" = nnet.results,
+      "mars" = mars.results,
+      "svm" = svm.results,
+      "knn" = knn.results) |>
+  kable(caption = "Test Performance")
+```
+
+The SVM model has the best performance for the training set.
+
+## (b)
+
+Which predictors are the most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How to the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+```{r}
+# variable importance
+var.imp <- varImp(svmRTuned)
+plot(var.imp, top = 10)
+```
+
+Among the 10 most important variables, 6 are process, and 4 are biological. For the linear model, 7 were process, and 3 were biological.
+
+## (c)
+
+Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+```{r}
+# store 10 most important variable names
+m.imp <- var.imp$importance |>
+  data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  row.names()
+
+# correlation matrix of 10 most important variables and response variable
+df |>
+  select(all_of(c("Yield",m.imp))) |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.6,
+            type = "lower")
+```
+
+```{r}
+featurePlot(df[,m.imp], df$Yield,
+            between = list(x = 1, y = 1),
+            type = c("p","smooth"))
+```
+
+These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot correspond to the correlations in the matrix plot.
+
+# 8.1
+
+Recreate the simulated data from Exercise 7.2:
+
+```{r}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd=1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+## (a)
+
+Fit a random forest model to all the predictors, then estimate the variable importance scores:
+
+```{r}
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+
+rfImp1 <- varImp(model1, scale=FALSE)
+rfImp1 |>
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  kable()
+```
+
+Did the random forest model significantly use the uninformative predictors (V6 - V10)?
+
+*No, the uninformative predictors V6-V10 were not of significant use to the model*.
+
+## (b)
+
+Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+
+```{r}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+
+Fit another random forest model to these data. Did the important score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+
+```{r}
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+
+rfImp2 <- varImp(model2, scale = FALSE)
+rfImp2 |>
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  kable()
+```
+
+The importance of the V1 variable is diminished as the duplicate1 variable takes on some of its importance in the model.
+
+Adding another highly correlated variable,
+
+```{r}
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .08
+cor(simulated$duplicate2, simulated$V1)
+```
+
+```{r}
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+
+rfImp3 <- varImp(model3, scale = FALSE)
+rfImp3 |>
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  kable()
+```
+
+As another highly correlated variable is added, the importance of the V1 variable to the model is reduced futher.
+
+## (c)
+
+Use the `cforest` function in the `party` package to fit a random forest model using conditional inference trees. The `party` package function `varimp` can calculate predictor importance. The `conditional` argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+```{r}
+model4 <- cforest(y ~ ., data = simulated)
+# conditional = FALSE
+varImp(model4, conditional = FALSE) |> 
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  kable()
+```
+
+```{r}
+# conditional = TRUE
+varImp(model4, conditional = TRUE) |> 
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  kable()
+```
+
+Setting `conditional = FALSE` yields variable importance closer to the pattern as the traditional random forest model, however still different. The results from setting `conditional = TRUE` are very different from the traditional rf model.
+
+## (e)
+
+Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+### Boosted Trees
+
+```{r}
+set.seed(123)
+gbmModel <- gbm(y ~ ., data = simulated, distribution = "gaussian")
+summary(gbmModel)
+```
+
+The pattern with the boosted trees model is different from the traditional random forest but near to the modified conditional inference tree model.
+
+### Cubist
+
+```{r}
+set.seed(123)
+simulated.x <- simulated |> select(-y)
+cubistModel <- cubist(simulated.x, simulated$y, committees = 100)
+varImp(cubistModel) |>
+  as.data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  kable()
+```
+
+Again, we have a different pattern. In the cubist model, V1 is the most important variable, and V4 is the third most important variable. In the cubist model, V6 is more important than duplicate1.
+
+# 8.2
+
+Use simulation to show tree bias with different granularities.
+
+We'll demonstrate by creating three predictors of different variances.
+
+```{r}
+set.seed(100)
+# create predictors
+large <- sample(0:1000, 100, replace = TRUE)
+medium <- sample(0:100, 100, replace = TRUE)
+small <- sample(0:10, 100, replace = TRUE)
+
+# create y value including error term
+y <- large + medium + small + rnorm(100)
+
+# create data frame
+df <- data.frame(y, large, medium, small)
+
+# fit single regression tree
+rpartTree <- rpart(y ~ ., data = df)
+varImp(rpartTree) |>
+  as.data.frame() |>
+  kable()
+```
+
+We can see the model favors predictors with larger variance.
+
+# 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitude of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+![](/Users/joshiden/Documents/Classes/CUNY%20SPS/Summer%202023/DATA624/DATA624/fig824.png)
+
+## (a)
+
+Why does the model on the right focus its importance on just the first few predictors, whereas the model on the left spreads importance across more predictors?
+
+*The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration, subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, .9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
+
+*Boosting can be susceptible to over-fitting, as boosting will select an optimal weak learner at each iteration. To offset this, regularization or shrinkage is applied as a learning rate which represents the fraction of a current prediction to be added to the previous iteration's predictions. As the learning rate increases, a larger fraction of predictions is added to the model - but this is not a good thing. A learning rate of 1 indicates no shrinkage, high error, focusing on fewer variables, the model is fast and greedy.*
+
+## (b)    
+
+Which model do you think would be more predictive of other samples? 
+*A lower learning rate indicates slower learning and less errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so I believe the model on the left would be more predictive.*     
+
+## (c)      
+
+How would increasing interaction depth affect the slope of predictor importance for either model in Fig 8.24?     
+
+*The interaction depth refers to the maximum number of splits or levels from the root node to the farthest leaf node. A larger depth provides the model with the ability to capture more complex interactions between predictors. Let's demonstrate using the data the `solubility` data from the figure.* 
+
+
+```{r, fig.height = 8, cache = TRUE}
+data(solubility)
+set.seed(100)
+
+ctrl <- trainControl(method = "cv", 
+                     allowParallel = TRUE,
+                     number = 10)
+
+# build left grids/models at default interaction depth of 1 and 10
+leftGrid1 <- expand.grid(n.trees = 100,
+                        interaction.depth = 1,
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
+
+leftModel1 <- train(x = solTrainXtrans, y = solTrainY,
+                   method = "gbm",
+                   tuneGrid = leftGrid1,
+                   trControl = ctrl,
+                   verbose = FALSE)
+
+leftGrid10 <- expand.grid(n.trees = 100,
+                        interaction.depth = 10,
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
+
+leftModel10 <- train(x = solTrainXtrans, y = solTrainY,
+                   method = "gbm",
+                   tuneGrid = leftGrid10,
+                   trControl = ctrl,
+                   verbose = FALSE)
+
+# build right grids / models
+rightGrid1 <- expand.grid(n.trees = 100,
+                        interaction.depth = 1,
+                        shrinkage = 0.9,
+                        n.minobsinnode = 10)
+rightModel1 <- train(x = solTrainXtrans, y = solTrainY,
+                   method = "gbm",
+                   tuneGrid = rightGrid1,
+                   trControl = ctrl,
+                   verbose = FALSE)
+
+rightGrid10 <- expand.grid(n.trees = 100,
+                        interaction.depth = 10,
+                        shrinkage = 0.9,
+                        n.minobsinnode = 10)
+
+rightModel10 <- train(x = solTrainXtrans, y = solTrainY,
+                   method = "gbm",
+                   tuneGrid = rightGrid10,
+                   trControl = ctrl,
+                   verbose = FALSE)
+
+grid.arrange(plot(varImp(leftModel1), top = 20, main = "Left Model: Interaction Depth: 1"), 
+             plot(varImp(leftModel10), top = 20, main = "Left Model: Interaction Depth: 10"),
+             plot(varImp(rightModel1), top = 20, main = "Right Model: Interaction Depth: 1"),
+             plot(varImp(rightModel10), top = 20, main = "Right Model: Interaction Depth: 10"),
+             nrow = 2)
+
+```
+
+Unfortunately I wasn't able to recreate the bagging component, but we can observe that for the left model, with more important variables, the slope becomes steeper as the interaction depth increases. Conversely, for the right model with important variables, the slope decreases as the interaction depth increases. 
+
+# 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models. 
+
+### Pre-processing
+
+```{r, warning=FALSE, message=FALSE, cache=TRUE}
+data("ChemicalManufacturingProcess")
+cmp <- ChemicalManufacturingProcess
+
+set.seed(100)
+trans <- preProcess(cmp, 
+                   method = c("BoxCox", "knnImpute", "center", "scale"))
+
+# apply the transformed data
+df <- predict(trans, cmp)
+df$Yield <- cmp$Yield
+
+# split the data into training and testing sets
+trainRows <- createDataPartition(df$Yield, p = .80, list = FALSE)
+train.set <- df[trainRows, ]
+test.set <- df[-trainRows, ]
+
+# set aside predictors and response 
+train.x <- train.set |> select(-Yield)
+train.y <- train.set$Yield
+test.x <- test.set |> select(-Yield)
+test.y<- test.set$Yield
+```
+
+### Single Tree Regression     
+
+```{r, warning=FALSE, cache = TRUE}
+set.seed(100)
+
+registerDoSEQ()
+
+rpartModel <- train(train.x, train.y,
+                    method = "rpart",
+                    tuneLength = 10)
+
+rpartPred <- predict(rpartModel, test.x)
+rpart.results <- postResample(rpartPred, test.y)
+```
+
+### Bagged Trees
+
+```{r, cache=TRUE}
+set.seed(100)
+
+baggedModel <- train(train.x, train.y,
+                    method = "treebag",
+                    tuneLength = 10)
+
+baggedPred <- predict(baggedModel, test.x)
+bagged.results <- postResample(baggedPred, test.y)
+```
+
+### Random Forest    
+
+```{r, cache=TRUE}
+set.seed(100)
+
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+rfModel <- train(train.x, train.y,
+                 method = "rf",
+                 tuneLength = 10,
+                 trControl = ctrl)
+
+rfPred <- predict(rfModel, test.x)
+rf.results <- postResample(rfPred, test.y)
+```
+
+### Gradient Boosting    
+
+Tuning gradient boosting model over interaction depth, and shrinkage rate. Leaving the minimum terminal node size at default 10 to preserve perfomance capability. 
+
+```{r, cache=TRUE}
+set.seed(100)
+
+grid <- expand.grid(n.trees=100,
+                    interaction.depth=c(1, 10),
+                    shrinkage=c(0.1, 0.5),
+                    n.minobsinnode=10)
+
+gbmModel <- train(train.x, train.y,
+                  method = "gbm",
+                  tuneLength = 10,
+                  tuneGrid = grid,
+                  trControl = ctrl,
+                  verbose = FALSE)
+
+gbmPred <- predict(gbmModel, test.x)
+gbm.results <- postResample(gbmPred, test.y)
+```
+
+### Cubist    
+
+```{r}
+set.seed(100)
+
+cubistModel <- train(train.x, train.y,
+                     method = "cubist",
+                     tuneLength = 10,
+                     trControl = ctrl)
+
+cubistPred <- predict(cubistModel, test.x)
+cubist.results <- postResample(cubistPred, test.y)
+```
+
+## (a)    
+
+Which tree based regression model gives the optimal resampling and test set performance? 
+
+```{r}
+set.seed(100)
+rbind("single regression" = postResample(predict(rpartModel), train.y),
+      "bagged trees" = postResample(predict(baggedModel), train.y),
+      "random forest" = postResample(predict(rfModel), train.y),
+      "gradient boosted" = postResample(predict(gbmModel), train.y),
+      "cubist" = postResample(predict(cubistModel), train.y)) |>
+  kable(caption = "Resampling Performance")
+```
+
+```{r}
+rbind("single regression" = rpart.results,
+      "bagged trees" = bagged.results,
+      "random forest" = rf.results,
+      "gradient boosted" = gbm.results,
+      "cubist" = cubist.results) |>
+  kable(caption = "Testing Performance")
+```
+
+The cubist model provides the optimal resampling and testing performance. 
+
+## (b)     
+
+Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models? 
+
+```{r}
+plot(varImp(cubistModel), top = 10, main = "Cubist Model")
+```
+In this model we see process comprises 6 of the top 10 most important variables, which is equivalent to what we observed in the nonlinear model. In the linear model, process comprises 7 of the top 10 most important variables. 
+
+## (c)    
+
+Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield? 
+
+```{r}
+srt <- rpart(Yield ~ ., data=df)
+fancyRpartPlot(srt, palette="GnBu", caption = "Single Regression Tree")
+```
+
+We can observe the following:   
+
+- The root node for this tree is `ManufacturingProcess32`. We see the split occurs when the variable is < 0.22.  
+- Each child node represents a subset of the data at the denoted split criteria
+- The tree depth is the number of splits in the tree. A deeper tree with more splits indicates more complex decision rules and potentially more overfitting to the data. In this chart, we have three splits.   
+- The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.22, and we can observe where the exceptions to this occur. 
+
+ 
+
