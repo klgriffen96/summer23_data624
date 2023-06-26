@@ -18,7 +18,12 @@ output:
 knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T)
 library(tidyverse)
 library(kableExtra)
-library(mice)
+library(DMwR2)
+library(gridExtra)
+library(AppliedPredictiveModeling)
+library(e1071)
+library(caret)
+
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -33,7 +38,7 @@ Kuhn & Johnson. "Applied Predictive Modeling"
 
 This accompanies readings from KJ Chapters 6, 7, and 8.
 
-Additionally a recommender problem was assigned by the professor.
+Additionally readings on recommender systems along with a recommender system problem was assigned by the professor.
 
 ## KJ 6.3
 
@@ -49,7 +54,6 @@ Additionally a recommender problem was assigned by the professor.
 ```{r}
 
 # Load data
-library(AppliedPredictiveModeling)
 data(ChemicalManufacturingProcess)
 
 ```
@@ -64,15 +68,18 @@ We'll first generate a summary to get a first look at the data and to show missi
 dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
 data.frame(Missing=colSums(is.na(dfchem))) %>%
     filter(Missing > 0) %>%
+    arrange(desc(Missing)) %>%
     kbl(caption='Missing value counts') %>%
     kable_classic(full_width=F)
+```
 
-# Use MICE to impute missing values
-imp <- mice(dfchem, printFlag=F)
-dfchem2 <- complete(imp)
+Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
+
+```{r}
+dfimp <- knnImputation(ChemicalManufacturingProcess,k=3)
 
 # Verify no more missing values exist
-print(paste0('Missing values after imputation: ', sum(is.na(dfchem2))))
+print(paste0('Missing values after imputation: ', sum(is.na(dfimp))))
 
 ```
 
@@ -83,24 +90,143 @@ print(paste0('Missing values after imputation: ', sum(is.na(dfchem2))))
 First we will split the data into a training and a test set.
 
 ```{r}
+set.seed("09041996")
 
+## Split training and test
+train_indices <- createDataPartition(dfimp$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
 
+dftrain <- dfimp[train_indices,]
+dftest <- dfimp[-train_indices,]
+```
+
+Next we will examine the distribution of the yield for both the training and the test sets.
+
+```{r}
+# Examine train and test sets
+plot1 <- ggplot(data = dftrain, aes(x=Yield)) + geom_histogram(fill = "steelblue", binwidth = 1) + 
+  ggtitle('Training set yield histogram') 
+
+plot2 <- ggplot(data = dftest, aes(x=Yield)) + geom_histogram(fill = "steelblue", binwidth = 1) + 
+  ggtitle('Test set yield histogram') 
+
+grid.arrange(plot1, plot2, ncol = 2)
 
 ```
 
 Before considering a model, we will do some exploratory data analysis to better understand the data and apply some pre-processing techniques to ready it for modeling.
 
+First we can check the distribution of the predictors and see what have near-zero variance and remove these from the predictor set. 
+
 ```{r}
+data.train.x <- dftrain |> select(-Yield)
+data.train.y <- dftrain |> select(Yield)
+  
+nzv <- nearZeroVar(data.train.x)
+paste0("Inds near zero variance to be removed: ", colnames(data.train.x[nzv]))
+data.train.x |> ggplot(aes(x = data.train.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(data.train.x[nzv]))
+data.train.x <- data.train.x[-nzv]
 
+```
+Next we can inspect the outliers.
 
+```{r, warning=FALSE}
+# check for outliers
+for (i in 1:length(data.train.x)){
+  data <- data.train.x[[i]]
+  quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
+  IQR <- IQR(data)
+  Lower <- quartiles[1] - 1.5*IQR
+  Upper <- quartiles[2] + 1.5*IQR
+  outliers <- which(data < Lower | data > Upper)
+  data[outliers] <- NA
+  print(paste0(colnames(data.train.x[i]), " outliers: ", length(outliers)))
+}
 
 ```
 
-According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled.
+Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
+
+Next we can examine the skewness.
+
+```{r}
+skew.vals <- apply(data.train.x, MARGIN = 2, skewness) |>
+                  data.frame() |>
+                  rename("skew" = 1) |>
+                  filter(skew > 2 | skew < -2) |>
+                  arrange(desc(skew))
+
+sprintf("Number of skewed variables: %d",nrow(skew.vals))
+kable(skew.vals)
+```
+
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. 
+
+
+In order to reduce skewness we can use a Box-Cox transformation depending on the approach we take. Now we take a look at a correlation matrix, 
+
+```{r}
+data.train.x |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.3,
+            type = "lower")
+```
+
+
+Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
+
+```{r}
+ctrl <- trainControl(method = "cv", number = 10)
+
+# tune and fit the model with pre processing 
+plsTune <- train(data.train.x, data.train.y$Yield,
+                 method = "pls",
+                 tuneLength = 20,
+                 trControl = ctrl,
+                 preProc = c("center","scale"))
+
+plsTune
+
+# elastic net regression
+# enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+enetTune <- train(data.train.x, data.train.y$Yield, 
+                  method='enet', 
+                  preprocess=c('center', 'scale'), 
+                  trControl=ctrl)
+enetTune
+```
+
+```{r}
+optimal.model <- plsTune$bestTune[['ncomp']]
+optimal.rmse <- plsTune$results[['RMSE']][[3]]
+
+cat(sprintf("The optimal number of components to minimize the RMSE is %i\nThe RMSE using %i components is %f.",
+            optimal.model,
+            optimal.model,
+            optimal.rmse))
+```
+
+```{r}
+optimal.fraction  <- enetTune$bestTune[['fraction']]
+optimal.lambda <- enetTune$bestTune[['lambda']]
+optimal.rmse <- enetTune$results[['RMSE']][[1]]
+
+cat(sprintf("The optimal fraction to minimize the RMSE is %f\nThe lambda to minimize RMSE is %i\n The optimal RMSE is %f.",
+            optimal.fraction,
+            optimal.lambda,
+            optimal.rmse))
+```
+
+The elastic net had the lower RMSE.
 
 ```{r}
 
-
+plot(enetTune)
 
 ```
 
@@ -109,20 +235,35 @@ According to the book, when there are a lot of highly correlated predictors manu
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
 ```{r}
+data.test.x <- dftest |> select(-Yield)
+data.test.y <- dftest |> select(Yield)
 
+preds <- predict(plsTune, data.test.x[-nzv])
+postResample(preds, data.test.y$Yield)
 
-
+preds <- predict(enetTune, data.test.x[-nzv])
+postResample(preds, data.test.y$Yield)
 ```
+
+The RMSE value approximately the same in the test set as on the training set for both, but the RMSE was lower for the PLS than the elastic net on the test data.
+
+```{r}
+plot(residuals(plsTune), ylab='residuals')
+abline(h = 0, col = 'red')
+```
+
+The residuals appear to be random and centered around mean zero. The model appears to fit well.  
 
 ### (e)
 
 **Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
 
-To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors.
+To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
 
 ```{r}
 
-
+var.imp <- varImp(plsTune)
+plot(var.imp, top = 20)
 
 ```
 
@@ -130,11 +271,28 @@ To understand what predictors are most important to the model the "variable impo
 
 **Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
 
+
 ```{r}
+# store 10 most important variable names
+m.imp <- var.imp$importance |>
+  data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  row.names()
 
-
-
+# correlation matrix of 10 most important variables and response variable
+dfimp |>
+  select(all_of(c("Yield",m.imp))) |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.6,
+            type = "lower")
 ```
+
+We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
+
 
 ### 7.2
 
