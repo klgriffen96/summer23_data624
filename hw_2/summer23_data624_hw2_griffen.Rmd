@@ -212,7 +212,7 @@ df_imp
 runs of the manufacturing process?
 
 ```{r}
-inds_imp <- which(df_imp$importance$Overall > 60)
+inds_imp <- which(df_imp$importance$Overall > 40)
 rnames_imp <- rownames(df_imp$importance)[inds_imp]
 rnames_imp <- append(rnames_imp, "Yield")
 
@@ -279,6 +279,17 @@ tooHigh <- findCorrelation(cor(trainingData$x), cutoff = .75)
 
 # no correlations greater than 0.75! 
 
+library(doParallel)
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
 nnetGrid <- expand.grid(.decay = c(0, 0.01, .1), .size = c(1:10), .bag = FALSE)
 
 nnetModel <- train(x = trainingData$x, 
@@ -290,7 +301,11 @@ nnetModel <- train(x = trainingData$x,
                    linout = TRUE,
                    trace = FALSE,
                    MaxNWts = 10 * (ncol(trainingData$x) + 1) + 10 + 1,
-                   maxit = 500)
+                   maxit = 500,
+                   allowParallel = TRUE)
+
+stopCluster(cl)
+registerDoSEQ()
 
 # nnetModel
 
@@ -360,11 +375,178 @@ The best rquared was from the MARS model along with the best RMSE and MAE.
 
 Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
 
+```{r}
+data("ChemicalManufacturingProcess")
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+cmp_i2 <- cmp_i |> select(-Yield)
+
+trans <- preProcess(cmp_i2, method = c("center", "scale", "YeoJohnson", "nzv"))
+cmp_i2 <- predict(trans, cmp_i2)
+
+cmp_i2$Yield <- cmp_i$Yield
+
+cmp_i <- cmp_i2
+
+i <- createDataPartition(cmp_i$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
+```
+
+Tune several models on these data. For example:
+
+```{r}
+library(caret)
+knnModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "knn",
+                    tuneLength = 10)
+knnModel
+
+knnPred <- predict(knnModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.knn <- postResample(pred = knnPred, obs = data.test.y)
+
+```
+
+
+Next try neural network.
+
+```{r}
+
+# remove predictors so absolute pairwise correlation is less than 0.75
+
+tooHigh <- findCorrelation(cor(data.train.x), cutoff = .75)
+
+
+trainXnnet <- data.train.x[, -tooHigh]
+testXnnet <- data.test.x[, -tooHigh]
+
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1), .size = c(1:10), .bag = FALSE)
+
+nnetModel <- train(x = trainXnnet, 
+                    y = data.train.y,
+                   method = "avNNet",
+                   tuneGrid = nnetGrid,
+                   trControl = trainControl(method = "cv"),
+                   preProc = c("center", "scale"),
+                   linout = TRUE,
+                   trace = FALSE,
+                   MaxNWts = 10 * (ncol(trainXnnet) + 1) + 10 + 1,
+                   maxit = 500,
+                   allowParallel = TRUE)
+
+stopCluster(cl)
+registerDoSEQ()
+
+# nnetModel
+
+nnetPredict <- predict(nnetModel, newdata = testXnnet)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.nnet <- postResample(pred = nnetPredict, obs = data.test.y)
+
+```
+
+Next try MARS. 
+
+```{r}
+
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+
+MARSModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "earth",
+                    tuneGrid = marsGrid,
+                    trControl = trainControl(method = "cv"))
+
+
+MARSModel
+
+MARSPred <- predict(MARSModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.MARS <- postResample(pred = MARSPred, obs = data.test.y)
+
+
+```
+
+Next try SVM.
+
+```{r}
+svmModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "svmRadial",
+                  tuneLength = 14,
+                  trControl = trainControl(method = "cv"))
+svmModel
+
+svmPred <- predict(svmModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+p.svm <- postResample(pred = svmPred, obs = data.test.y)
+
+```
+
+
+```{r}
+p.knn
+p.nnet
+p.MARS
+p.svm
+```
+
+
 (a) Which nonlinear regression model gives the optimal resampling and test  set performance?
+
+The optimal resampling and test performance was from the MARS model.
+
 
 (b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
 
+```{r}
+varImp(MARSModel)
+
+```
+
+
+Similar to the optimal linear model - process variables dominate the variable importance list. Similar to the linear model - ManufacturingProcess32 is registered as the most important. The most important biological process is different. 
+
 (c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+```{r}
+df_imp <- varImp(MARSModel)
+inds_imp <- which(df_imp$importance$Overall > 0)
+rnames_imp <- rownames(df_imp$importance)[inds_imp]
+rnames_imp <- append(rnames_imp, "Yield")
+
+imp_cor <- cor(cmp_i[,c(rnames_imp)])
+
+# Corr chart
+corrplot(cor(imp_cor), method="number", order = "AOE", type = "lower", diag = FALSE, na.label = "?")
+
+```
 
 ### 8.1
 
@@ -405,7 +587,7 @@ simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
 cor(simulated$duplicate1, simulated$V1)
 ```
 
-Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+Fit another random forest model to these data. Did the importance score for V1 change? 
 
 ```{r}
 model2 <- randomForest(y ~ ., data = simulated,
@@ -417,16 +599,28 @@ rfImp2
 
 The variable importance of V1 went from 8.732235404	to 5.69119973, and the importance of the duplicate1 variable is 4.28331581. So effectively the variable importance is split between the two correlated variables. 
 
+What happens when you add another predictor that is also highly correlated with V1?
+
+```{r}
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .2
+cor(simulated$duplicate2, simulated$V1)
+```
+
+```{r}
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE) |> arrange(desc(Overall))
+rfImp3
+```
+
+Adding a second correlated variable decreased the variable importance of V1 further.
+
 (c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
 ```{r}
 library(party)
 
-set.seed(200)
-simulated <- mlbench.friedman1(200, sd = 1)
-simulated <- cbind(simulated$x, simulated$y)
-simulated <- as.data.frame(simulated)
-colnames(simulated)[ncol(simulated)] <- "y"
 
 model_forest <- cforest(y ~ ., data = simulated)
 
@@ -439,16 +633,30 @@ These importances do show the same pattern of the random forest model where vari
 
 (d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
 
+First try Bagged Tree.
+
 ```{r}
 library(tidyverse)
-gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
-                       n.trees = seq(100, 1000, by = 50),
-                       shrinkage = c(0.01, 0.1),
-                       n.minobsinnode = 1)
-set.seed(100)
+gbmGrid <- expand.grid(.interaction.depth = seq(1, 7, by = 2),
+                       .n.trees = seq(100, 1000, by = 50),
+                       .shrinkage = c(0.01, 0.1),
+                       .n.minobsinnode = 1)
+
 sim_x <- simulated |> select(-y)
 gbmTune <- train(sim_x, simulated$y, method = "gbm", tuneGrid = gbmGrid, verbose = FALSE)
+
+summary(gbmTune)
 ```
+
+Next try cubist.
+
+```{r}
+cubistTuned <- train(sim_x, simulated$y, method = "cubist", verbose = FALSE)
+varImp(cubistTuned)
+```
+
+
+For the both the bagged and cubist models variables 1-5 show up as the most important. 
 
 ### 8.2
 
@@ -471,6 +679,7 @@ df <- data.frame(p1 = p1, p2= p2, p3 = p3, y = y)
 rpartTree <- rpart(y ~ ., data = df)
 varImp(rpartTree)
 ```
+
 The granularity of p1, there is only 1 distinct value, then for p2 there is only 2 distinct values and for p3 there are many distinct values. The variable importance of p3 is the highest. I think this is because it is picking up on the random noise. 
 
 ### 8.3
@@ -479,9 +688,15 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 (a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
 
+The model on the right focuses its importance on just the first few predictors whereas the model on the left spreads the importance across more predictors because of the differing bagging fraction and learning rates. The left hand has both set to 0.1 and the right hand has both set to 0.9. The learning rate is the "fraction of the current predicted value that is added to the previous iterations predicted value". The smaller the value, the greater the computation time. For the bagging fraction is the fraction of the training data that is randomly selected. With a smaller learning rate and a smaller bagging fraction, the variable importance may be more evenly distributed because there will be more trees created which gives more opportunity for a variable to be deemed "important". 
+
 (b) Which model do you think would be more predictive of other samples?
 
+I think the left model (low bagging fraction and low learning rate) would be more predictive of other samples because the low bagging fraction leads to a greater diversity in the trees and a low learning rate leads to more trees - it seems that this combination would have greater predictive power.
+
 (c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors." pg 205. Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. I would think that a smaller tree depth would lead to a more rapidly decreasing to 0 variable importance and a greater tree depth would have a more gradual decrease to 0. 
 
 ### 8.7
 
