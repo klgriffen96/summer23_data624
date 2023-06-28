@@ -72,12 +72,11 @@ data.frame(Missing=colSums(is.na(dfchem))) %>%
     kbl(caption='Missing value counts') %>%
     kable_classic(full_width=F)
 ```
-To get additional experience, we will try to do some work using python. The library `retriculate` helps with passing variables between r and python.
+To get additional experience, we will try to do some work using python. The library `retriculate` helps with passing variables between r and python. The python anaconda distribution comes with a lot of preloaded libraries helpful for datascience.
 
 ```{r}
 library(reticulate)
 use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
-install.packages("sklearn.impute.KNNImputer")
 ```
 
 By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
@@ -134,6 +133,14 @@ dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitl
 dfimp.x <- dfimp.x[-nzv]
 
 ```
+
+Check near zero variance in python.
+
+```{python}
+pdfimp.nunique(axis=0)
+
+```
+
 Next we can inspect the outliers.
 
 ```{r, warning=FALSE}
@@ -166,10 +173,10 @@ sprintf("Number of skewed variables: %d",nrow(skew.vals))
 kable(skew.vals)
 ```
 
-Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson.
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
 
 ```{r}
-trans <- preProcess(dfimp.x, method = c("YeoJohnson"))
+trans <- preProcess(dfimp.x, method = c("YeoJohnson", "center","scale"))
 df.x <- predict(trans, dfimp.x)
 ```
 
@@ -248,16 +255,14 @@ data.train.y <- dftrain |> select(Yield)
 plsTune <- train(data.train.x, data.train.y$Yield,
                  method = "pls",
                  tuneLength = 20,
-                 trControl = ctrl,
-                 preProc = c("center","scale"))
+                 trControl = ctrl)
 
 plsTune
 
 # elastic net regression
 # enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
 enetTune <- train(data.train.x, data.train.y$Yield, 
-                  method='enet', 
-                  preProc=c('center', 'scale'), 
+                  method='enet',  
                   trControl=ctrl)
 enetTune
 ```
@@ -283,7 +288,7 @@ cat(sprintf("The optimal fraction to minimize the RMSE is %f\nThe lambda to mini
             optimal.rmse))
 ```
 
-The elastic net had the lower RMSE for the training data.
+The pls net had the lower RMSE for the training data.
 
 ```{r}
 plot(plsTune)
