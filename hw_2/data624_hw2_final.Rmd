@@ -77,7 +77,7 @@ To get additional experience, we will try to do some work using python. The libr
 ```{r}
 library(reticulate)
 use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
-
+install.packages("sklearn.impute.KNNImputer")
 ```
 
 By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
@@ -104,24 +104,123 @@ dfimp <- knnImputation(ChemicalManufacturingProcess,k=3)
 print(paste0('Missing values after imputation: ', sum(is.na(dfimp))))
 
 ```
+Now lets impute with python. We couldn't get the KNN imputer in python to work, so using the simple imputer with mean imputation instead.
+
+```{python}
+from sklearn.impute import SimpleImputer
+import pandas as pd
+
+imputer = SimpleImputer(strategy='mean')
+pdfimp = r.dfchem
+imputer = imputer.fit(pdfimp)
+pdfimp.iloc[:,:] = imputer.transform(r.dfchem)
+pdfimp.isna().sum()
+pdfimp.shape
+```
 
 ### (c)
 
 **Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
 
-First we will split the data into a training and a test set.
+First we will do exploratory data analysis and do any pre-processing necessary.
+
+We can check the distribution of the predictors and see what have near-zero variance and remove these from the predictor set. 
+
+```{r}
+dfimp.x <- dfimp |> select(-Yield)
+nzv <- nearZeroVar(dfimp.x)
+paste0("Inds near zero variance to be removed: ", colnames(dfimp.x[nzv]))
+dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(dfimp.x[nzv]))
+dfimp.x <- dfimp.x[-nzv]
+
+```
+Next we can inspect the outliers.
+
+```{r, warning=FALSE}
+# check for outliers
+for (i in 1:length(dfimp.x)){
+  data <- dfimp.x[[i]]
+  quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
+  IQR <- IQR(data)
+  Lower <- quartiles[1] - 1.5*IQR
+  Upper <- quartiles[2] + 1.5*IQR
+  outliers <- which(data < Lower | data > Upper)
+  data[outliers] <- NA
+  print(paste0(colnames(dfimp.x[i]), " outliers: ", length(outliers)))
+}
+
+```
+
+Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
+
+Next we can examine the skewness.
+
+```{r}
+skew.vals <- apply(dfimp.x, MARGIN = 2, skewness) |>
+                  data.frame() |>
+                  rename("skew" = 1) |>
+                  filter(skew > 2 | skew < -2) |>
+                  arrange(desc(skew))
+
+sprintf("Number of skewed variables: %d",nrow(skew.vals))
+kable(skew.vals)
+```
+
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson.
+
+```{r}
+trans <- preProcess(dfimp.x, method = c("YeoJohnson"))
+df.x <- predict(trans, dfimp.x)
+```
+
+We can take another look now at skewness.
+
+```{r}
+skew.vals <- apply(df.x, MARGIN = 2, skewness) |>
+                  data.frame() |>
+                  rename("skew" = 1) |>
+                  filter(skew > 2 | skew < -2) |>
+                  arrange(desc(skew))
+
+sprintf("Number of skewed variables: %d",nrow(skew.vals))
+kable(skew.vals)
+```
+
+Interestingly, the "YeoJohnson" transformation did not correct all of the skewnesses.
+
+Now we take a look at a correlation matrix.
+
+```{r}
+dfimp.x |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.3,
+            type = "lower")
+```
+
+
+Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
+
+
+
+Now we will split the data into a training and a test set.
 
 ```{r}
 set.seed("09041996")
 
+df <- df.x
+df$Yield <- dfchem$Yield
+
 ## Split training and test
-train_indices <- createDataPartition(dfimp$Yield,
+train_indices <- createDataPartition(df$Yield,
                                     p = 0.8,
                                     list = FALSE,
                                     times = 1)
 
-dftrain <- dfimp[train_indices,]
-dftest <- dfimp[-train_indices,]
+dftrain <- df[train_indices,]
+dftest <- df[-train_indices,]
 ```
 
 Next we will examine the distribution of the yield for both the training and the test sets.
@@ -138,72 +237,12 @@ grid.arrange(plot1, plot2, ncol = 2)
 
 ```
 
-Before considering a model, we will do some exploratory data analysis to better understand the data and apply some pre-processing techniques to ready it for modeling.
-
-First we can check the distribution of the predictors and see what have near-zero variance and remove these from the predictor set. 
-
-```{r}
-data.train.x <- dftrain |> select(-Yield)
-data.train.y <- dftrain |> select(Yield)
-  
-nzv <- nearZeroVar(data.train.x)
-paste0("Inds near zero variance to be removed: ", colnames(data.train.x[nzv]))
-data.train.x |> ggplot(aes(x = data.train.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(data.train.x[nzv]))
-data.train.x <- data.train.x[-nzv]
-
-```
-Next we can inspect the outliers.
-
-```{r, warning=FALSE}
-# check for outliers
-for (i in 1:length(data.train.x)){
-  data <- data.train.x[[i]]
-  quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
-  IQR <- IQR(data)
-  Lower <- quartiles[1] - 1.5*IQR
-  Upper <- quartiles[2] + 1.5*IQR
-  outliers <- which(data < Lower | data > Upper)
-  data[outliers] <- NA
-  print(paste0(colnames(data.train.x[i]), " outliers: ", length(outliers)))
-}
-
-```
-
-Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
-
-Next we can examine the skewness.
-
-```{r}
-skew.vals <- apply(data.train.x, MARGIN = 2, skewness) |>
-                  data.frame() |>
-                  rename("skew" = 1) |>
-                  filter(skew > 2 | skew < -2) |>
-                  arrange(desc(skew))
-
-sprintf("Number of skewed variables: %d",nrow(skew.vals))
-kable(skew.vals)
-```
-
-Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we tried the YeoJohnson - unfortunately the RMSE was driven up. We ultimately decided to note skew as a limitation - but not transform our inputs to eliminate skewness.
-
-
-In order to reduce skewness we can use a Box-Cox transformation depending on the approach we take. Now we take a look at a correlation matrix, 
-
-```{r}
-data.train.x |>
-  cor() |>
-  round(2) |>
-  corrplot::corrplot(method = "square",
-            order = "alphabet",
-            tl.cex = 0.3,
-            type = "lower")
-```
-
-
-Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
 
 ```{r}
 ctrl <- trainControl(method = "cv", number = 10)
+
+data.train.x <- dftrain |> select(-Yield)
+data.train.y <- dftrain |> select(Yield)
 
 # tune and fit the model with pre processing 
 plsTune <- train(data.train.x, data.train.y$Yield,
@@ -261,10 +300,10 @@ plot(enetTune)
 data.test.x <- dftest |> select(-Yield)
 data.test.y <- dftest |> select(Yield)
 
-preds <- predict(plsTune, data.test.x[-nzv])
+preds <- predict(plsTune, data.test.x)
 postResample(preds, data.test.y$Yield)
 
-preds <- predict(enetTune, data.test.x[-nzv])
+preds <- predict(enetTune, data.test.x)
 postResample(preds, data.test.y$Yield)
 ```
 
