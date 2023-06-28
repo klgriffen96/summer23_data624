@@ -257,7 +257,7 @@ plsTune
 # enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
 enetTune <- train(data.train.x, data.train.y$Yield, 
                   method='enet', 
-                  preprocess=c('center', 'scale'), 
+                  preProc=c('center', 'scale'), 
                   trControl=ctrl)
 enetTune
 ```
