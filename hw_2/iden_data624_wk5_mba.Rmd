@@ -1,0 +1,216 @@
+---
+title: "HW5: MBA"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(kableExtra)
+library(arules)
+library(arulesViz)
+```
+
+# Introduction
+
+Imagine 1000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer's basket -- and therefore 'Market Basket Analysis'.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a **transaction** and each column in a row represents an **item**.
+
+Here is the dataset = [GroceryDataSet.csv]('https://github.com/klgriffen96/summer23_data624/blob/main/hw_2/GroceryDataSet.csv') (comma separated file).
+
+Your assignment is to use R to mine the data for association rules. You should report support, confidence and lift and your top 10 rules by lift.
+
+# Data Prep
+
+Visual inspection of the data identifies an unequal number of columns per row. Pulling the data into a dataframe and assigning each row a number to represent each basket, we pivot the data from wide to long for analysis.
+
+```{r, cache=TRUE}
+url <- "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv"
+data <- read.csv(url, header=FALSE)
+data[data == ""] <- NA # replace empty cells with NA
+data$tid <- as.integer(row.names(data)) # create transaction ID column using row indices
+
+# pivot data
+baskets <- data |> 
+  pivot_longer(cols = starts_with("V"), 
+               values_to = "item", 
+               values_drop_na = TRUE) |>
+  select(tid, item)
+
+kable(head(baskets)) |> kable_styling()
+```
+
+We can visualize the frequency of items in our baskets,
+
+```{r}
+baskets |>
+  group_by(item) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |> 
+  head(10) |>
+  ggplot(aes(x=reorder(item,count), y=count)) +
+  geom_col(fill="blue") +
+  geom_label(aes(label=count)) +
+  labs(x=NULL, y=NULL) + ggtitle('Top 10 Items') +
+  scale_y_discrete(breaks=NULL) +
+  coord_flip() + 
+  theme_classic()
+  
+```
+
+And the distribution of items per transaction,
+
+```{r}
+baskets |>
+  group_by(tid) |>
+  summarize(total_items = n()) |>
+  ggplot(aes(x=total_items)) +
+  geom_histogram(fill="blue", bins=30) +
+  theme_classic()
+```
+
+We can see most of the baskets contain 1 or 2 items, the maximum basket size appears to be just about 30, we can check this:
+
+```{r}
+baskets |>
+  group_by(tid) |>
+  summarize(total_items = n()) |>
+  filter(total_items == max(total_items)) |>
+  kable() |>
+  kable_styling()
+```
+
+Now we prepare the data for Market Basket Analysis, first we create a transaction object with the data,
+
+```{r}
+# Transform tid into a factor
+baskets$tid <- factor(baskets$tid) 
+
+# split into groups 
+baskets_list <- split(baskets$item, 
+                      baskets$tid)
+
+# transform to transactional dataset
+baskets_trx <- as(baskets_list,"transactions")
+
+# inspect transactions 
+inspect(head(baskets_trx))
+```
+
+We can also call the `summary` function on the transactions object, 
+
+
+```{r}
+summary(baskets_trx)
+```
+
+All of these operations can be simplified by calling the `read.transactions()` function to read in the data as a transaction object. 
+
+```{r,cache=TRUE}
+basket_tr <- read.transactions(url, sep=",")
+itemFrequencyPlot(basket_tr, 
+                  topN=10, 
+                  type="absolute", 
+                  xlab="Count", 
+                  ylab="",
+                  col="blue", 
+                  main="Top 10 items",
+                  cex.names=0.8,
+                  horiz=TRUE)
+```
+
+
+# Market Basket Analysis
+
+Association rule mining consists of two subtasks which provide insights into the relationships between items in transactional data: 
+
+- **Frequent itemset generation** 
+- **Rule generation**
+
+## Support    
+
+First we'll take a look at the itemsets in the data to identify the itemsets that occur most frequently. An **itemset** is a combination of items that appear together in a set of transactions. The **support** measures the frequency or occurrence of an itemset in the data by dividing the number of transactions that contain a specific itemset by the total number of transactions. High support indicates the itemset appears frequently. 
+
+```{r}
+# Frequent itemsets for all items 
+support_all <- apriori(basket_tr,
+                       parameter = list(target="frequent itemsets",
+                                        supp = 0.01,
+                                        minlen=2))
+
+# inspect(head(sort(support_all, by="support),10))
+
+# 10 most frequent items
+support_all |>
+  as("data.frame") |>
+  arrange(desc(support)) |>
+  head(10) |>
+  kable() |>
+  kable_styling()
+```
+
+Interpreting these results, the support column indicates the proportion of transactions that contain each itemset: 7.5% of all transactions contain "other vegetables" and "whole milk", 5.7% of all transactions contain "other vegetables "rolls/buns" and "whole milk", and so on. 
+
+## Rules
+
+Extracting rules allows us to observe the support, confidence, and lift measures of frequent itemsets. 
+
+```{r}
+rules <- apriori(baskets_trx,
+                 parameter= list(supp = 0.01, # minimum support
+                                 conf = 0.4,  # minimum confidence
+                                 minlen = 2)) # disallow empty sets
+```
+
+The `arulesViz` package contains a number of functions that enhance graphical display of association rules. The `inspectDT` function outputs an interactive display which can be sorted by column: 
+
+```{r, cache=TRUE}
+inspectDT(rules)
+```
+
+Plotting the rules with the `engine = "plotly"` argument creates an interactive visualization that allows the user to hover over data points in order to view association rule metrics, 
+
+```{r, warning=FALSE, message=FALSE, cache=TRUE}
+plot(rules, jitter=2, engine = "plotly")
+```
+
+
+## Confidence
+
+Each itemset consists of antecedents and consequents. **Antecedents** are the items or itemsets on the left-hand side of the association rule that represents a set of items or conditions that act as the premise or condition for the rule. **Consequents** are the items or itemsets on the right-hand side of the association rule that represents the set of items or outcomes that are predicted or observed based on the presence of the antecent. **Confidence** measures the likelihood or probability of finding the consequent item(s) in a rule given the antecedent(s). It is the proportion of transactions containing the antecedent that also contain the consequent. High confidence suggests a strong association between the antecedent and consequent. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(confidence)) |>
+  head(10) |>
+  kable() |>
+  kable_styling()
+```
+
+We can interpret the confidence that 58% of customers that bought "citrus fruit" and "root vegetables" also bought "other vegetables", and so on. 
+
+## Lift     
+
+Lift measures the strength of association between the antecedent and consequent items compared to their individual occurrences. It is the ratio of the observed support to the expected support if the antecedent and consequent were independent. Lift greater than 1 indicates a positive association, while lift less than 1 indicates a negative association. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(lift)) |>
+  head(10) |>
+  kable() |>
+  kable_styling()
+```
+
+Again, looking at the first line, we can interpret the lift of 3.03 to reprensent the occurrence of the antecedent is 3.03 times *likelier* when the antecedent items are present, and so on. 
+
