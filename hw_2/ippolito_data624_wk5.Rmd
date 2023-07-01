@@ -1,0 +1,557 @@
+---
+title: "ippolito_data624_wk5"
+author: "Michael Ippolito"
+date: "2023-06-19"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(kableExtra)
+library(mice)
+library(caret)
+library(corrplot)
+library(ggcorrplot)
+library(PerformanceAnalytics)
+library(MASS)  # for stepwise regression
+library(forecast)
+library(earth)  # for mars modeling
+library(kernlab)  # for svm modeling
+library(DMwR2)
+library(gridExtra)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+### KJ 7.2
+
+Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+
+$y\ =\ 10sin(πx_1x_2)\ +\ 20(x_3\ −\ 0.5)^2\ +\ 10x_4\ +\ 5x_5\ +\ N(0,\ σ^2)$
+
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package mlbench contains a function called mlbench.friedman1 that simulates these data:
+
+```{r}
+
+library(mlbench)
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x <- data.frame(trainingData$x)
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+
+```
+
+Tune several models on these data. For example:
+
+```{r}
+
+library(caret)
+knnModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "knn",
+                    preProc = c("center", "scale"),
+                    tuneLength = 10)
+knnModel
+
+knnPred <- predict(knnModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+postResample(pred = knnPred, obs = testData$y)
+
+```
+
+First, set up a data frame for the results and set the cross-validation parameters.
+
+```{r}
+
+# Results data frame
+dfr2 <- data.frame(matrix(nrow=10, ncol=3))
+colnames(dfr2) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Add the knn results
+dfr2[1,] = data.frame(
+    Model='knn', 
+    Tuning.Parameters=paste0('k=', knnModel$bestTune[['k']]), 
+    RMSE=min(knnModel$results[['RMSE']])
+)
+
+```
+
+Train a MARS model.
+
+```{r}
+
+# MARS model
+marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+set.seed(77)
+fitmars <- train(x=trainingData$x, y=trainingData$y, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+fitmars
+dfr2[2,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('degree=', fitmars$bestTune[['degree']], ', nprune=', fitmars$bestTune[['nprune']]), 
+    RMSE=min(fitmars$results[['RMSE']])
+)
+
+```
+
+Train an SVM model.
+
+```{r}
+
+# SVM model
+set.seed(77)
+fitsvm <- train(x=trainingData$x, y=trainingData$y, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+fitsvm
+dfr2[3,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('C=', fitsvm$bestTune[['C']], ', sigma=', round(fitsvm$bestTune[['sigma']], 3)), 
+    RMSE=min(fitsvm$results[['RMSE']])
+)
+
+```
+
+Train a neural network model.
+
+```{r warning=F}
+
+# nnet model using model averaging
+nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=F)  # set tuning parameters
+set.seed(77)
+fitnnet <- train(x=trainingData$x, y=trainingData$y, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
+             linout=T, trace=F, MaxNWts=10 * (ncol(trainingData$x) + 1) + 10 + 1, maxit=500)
+fitnnet
+dfr2[4,] = data.frame(
+    Model='avNNet', 
+    Tuning.Parameters=paste0('decay=', fitnnet$bestTune[['decay']], ', size=', fitnnet$bestTune[['size']], ', bag=False'), 
+    RMSE=min(fitnnet$results[['RMSE']])
+)
+
+```
+
+Summarize models.
+
+```{r}
+
+# Summarize models
+dfr2 %>%
+    filter(!is.na(RMSE)) %>%
+    kbl(caption='Model summary') %>%
+    kable_classic(full_width=F)
+
+```
+
+**Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?**
+
+Surprisingly, the second-degree MARS model pruned back to 10 parameters performed the best, with an RMSE of 1.39--significantly less than that of its closest competitor, SVM, with an RMSE of 1.85. The model-averaged neural network model performed similarly to SVM (RMSE=2.00). The K-nearest neighbor model performed poorly, with an RMSE well above the others (3.18). This is not surprising, as KNN models typically perform poorly when there are predictors that don't contribute significantly to the response; as stated in the problem description, in this data set there are five such predictors. The other models account for "noisy" predictors by pruning or applying a weight or decay factor.
+
+
+### KJ 7.5
+
+**Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.**
+
+We'll load, preprocess, and split the data as before.
+
+```{r}
+
+# Load data
+library(AppliedPredictiveModeling)
+data(ChemicalManufacturingProcess)
+dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
+
+# Impute missing values
+#imp <- mice(dfchem, printFlag=F)
+imp <- knnImputation(dfchem, k=3)
+dfchem2 <- complete(imp)
+
+# Set seed
+set.seed(77)
+
+# Corr plot
+corr1 <- cor(dfchem2)
+high_corr <- findCorrelation(corr1, cutoff=0.9, exact=T, verbose=F, names=F)
+
+# Remove the highly correlated variables
+dfchem3 <- dfchem2[,-high_corr]
+
+# Remove NZV features
+tmp_nzv <- nearZeroVar(dfchem3)
+dfchem4 <- dfchem3[,-tmp_nzv]
+
+# Split into train/test; createDataPartition generates indicies of the training set
+train_indices <- createDataPartition(dfchem4$Yield, p=0.80, times=1, list=F)
+dftrain <- dfchem4[train_indices,]
+dftest <- dfchem4[-train_indices,]
+
+# Separate outcome and predictors
+trainx <- dftrain %>% dplyr::select(-Yield)
+trainy <- dftrain$Yield
+testx <- dftest %>% dplyr::select(-Yield)
+testy <- dftest$Yield
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Results data frame
+dfr <- data.frame(matrix(nrow=10, ncol=3))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'Train.RMSE')
+
+```
+
+KNN model.
+
+```{r}
+
+# KNN model
+set.seed(77)
+fitknn2 <- train(x=trainx, y=trainy, method='knn', tuneLength=10, trControl=ctrl, preProc=c('center', 'scale'))
+fitknn2
+dfr[1,] = data.frame(
+    Model='knn', 
+    Tuning.Parameters=paste0('k=', fitknn2$bestTune[['k']]), 
+    Train.RMSE=min(fitknn2$results[['RMSE']])
+)
+
+
+```
+
+MARS model.
+
+```{r}
+
+# MARS model
+marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+set.seed(77)
+fitmars2 <- train(x=trainx, y=trainy, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+fitmars2
+dfr[2,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('degree=', fitmars2$bestTune[['degree']], ', nprune=', fitmars2$bestTune[['nprune']]), 
+    Train.RMSE=min(fitmars2$results[['RMSE']])
+)
+
+```
+
+SVM model.
+
+```{r}
+
+# SVM model
+set.seed(77)
+fitsvm2 <- train(x=trainx, y=trainy, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+fitsvm2
+dfr[3,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('C=', fitsvm2$bestTune[['C']], ', sigma=', round(fitsvm2$bestTune[['sigma']], 3)), 
+    Train.RMSE=min(fitsvm2$results[['RMSE']])
+)
+
+```
+
+Neural network model.
+
+```{r}
+
+# nnet model using model averaging
+nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=c(T, F))  # set tuning parameters
+set.seed(77)
+fitnnet2 <- train(x=trainx, y=trainy, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
+             linout=T, trace=F, MaxNWts=10 * (ncol(trainx) + 1) + 10 + 1, maxit=500)
+fitnnet2
+dfr[4,] = data.frame(
+    Model='avNNet', 
+    Tuning.Parameters=paste0('decay=', fitnnet2$bestTune[['decay']], ', size=', fitnnet2$bestTune[['size']], ', bag=', fitnnet2$bestTune[['bag']]), 
+    Train.RMSE=min(fitnnet2$results[['RMSE']])
+)
+
+```
+
+Display model summary.
+
+```{r}
+
+# Model summary
+dfr %>%
+    filter(!is.na(Train.RMSE)) %>%
+    kbl(caption='Model summary') %>%
+    kable_classic(full_width=F)
+
+```
+
+#### (a)
+
+**Which nonlinear regression model gives the optimal resampling and test set performance?**
+
+```{r}
+
+# Add column for test set RMSE to results data frame
+dfr$Test.RMSE = NA
+
+# Predict using test set
+
+# Knn
+predy <- predict(fitknn2, newdata=as.matrix(testx))
+dfr[1, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# MARS
+predy <- as.vector(predict(fitmars2, newdata=as.matrix(testx)))
+dfr[2, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# SVM
+predy <- predict(fitsvm2, newdata=as.matrix(testx))
+dfr[3, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Nnet
+predy <- predict(fitnnet2, newdata=as.matrix(testx))
+dfr[4, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Model summary
+dfr %>%
+    filter(!is.na(Train.RMSE)) %>%
+    kbl(caption='Model summary') %>%
+    kable_classic(full_width=F)
+
+```
+
+The first-degree MARS model pruned to six parameters yielded the best RMSE for both training and test data (1.19 and 1.01, respectively).
+
+#### (b)
+
+**Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?**
+
+```{r}
+
+varImp(fitmars2)$importance %>%
+    kbl(caption='Variable imporance - MARS model') %>%
+    kable_classic(full_width=F)
+
+```
+
+As shown above, ManufacturingProcess variables 32, 09, 13, and 39 are the most important features. These are only variables in the manufacturing process rather than biological variables, which again is advantageous since they can be controlled to some extent while the biological variables cannot be. The top three variables (32, 09, and 13) are the same as those found to be most important in the linear models, although in a different order (the linear model had ManufacturingProcess09 first). The fact that both linear and non-linear modeling chose the same top three predictors is good confirmation of their importance.
+
+#### (c)
+
+**Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?**
+
+```{r fig.width=9, fig.height=6}
+
+# Plot response vs top predictors
+p1 <- dfchem2 %>% ggplot(aes(x=ManufacturingProcess32, y=Yield)) +
+    geom_point() +
+    geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F)
+p2 <- dfchem2 %>% ggplot(aes(x=ManufacturingProcess09, y=Yield)) +
+    geom_point() +
+    geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F)
+p3 <- dfchem2 %>% ggplot(aes(x=ManufacturingProcess13, y=Yield)) +
+    geom_point() +
+    geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F)
+p4 <- dfchem2 %>% ggplot(aes(x=ManufacturingProcess39, y=Yield)) +
+    geom_point() +
+    geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F)
+p5 <- dfchem2 %>% filter(ManufacturingProcess39 > 0) %>%
+    ggplot(aes(x=ManufacturingProcess39, y=Yield)) +
+    geom_point() +
+    geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F) +
+    ggtitle('ManufacturingProcess39 (removed zero values)')
+grid.arrange(p1, p2, p3, p4, p5, ncol=2)
+
+```
+
+As in the linear model, processes 9 and 32 exhibit a positive relationship with yield, while the relationship between yield and process 13 is inverse. Process 39 is interesting in that there are some zero values that may or may not be outliers or data-entry errors. Including the outliers, there is a slight upward trend. The last graph shows that, after removing the potential outliers, the trend becomes slightly inverse. To assess whether these outliers should have been removed prior to modeling, we would have to know more about the context in which the source data were collected and whether zero values are expected from this type of process.
+
+### 8.1
+
+Recreate the simulated data from Exercise 7.2
+
+```{r}
+
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+
+```
+
+#### (a)
+
+**Fit a random forest model to all of the predictors, then estimate the variable importance scores:**
+
+```{r}
+
+library(randomForest)
+library(caret)
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+
+```
+
+**Did the random forest model significantly use the uninformative predictors (V6 – V10)?**
+
+```{r}
+
+
+
+```
+
+#### (b)
+
+**Now add an additional predictor that is highly correlated with one of the informative predictors. For example:**
+
+```{r}
+
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+
+```
+
+```{r}
+
+
+
+```
+
+**Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?**
+
+```{r}
+
+
+
+```
+
+#### (c)
+
+**Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?**
+
+```{r}
+
+
+
+```
+
+#### (d)
+
+**Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?**
+
+```{r}
+
+
+
+```
+
+### 8.2
+
+**Use a simulation to show tree bias with different granularities.**
+
+```{r}
+
+
+
+```
+
+### 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+```{r}
+
+
+
+```
+
+#### (a)
+
+**Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?**
+
+```{r}
+
+
+
+```
+
+#### (b)
+
+**Which model do you think would be more predictive of other samples?**
+
+```{r}
+
+
+
+```
+
+#### (c)
+
+**How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?**
+
+```{r}
+
+
+
+```
+
+### 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+```{r}
+
+
+
+```
+
+####(a)
+
+**Which tree-based regression model gives the optimal resampling and test set performance?**
+
+```{r}
+
+
+
+```
+
+#### (b)
+
+**Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?**
+
+```{r}
+
+
+
+```
+
+#### (c)
+
+**Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?**
+
+```{r}
+
+
+
+```
