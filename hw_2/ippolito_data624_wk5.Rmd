@@ -948,6 +948,8 @@ varImp(fitcub1)$importance %>%
     kbl(caption='Top 10 predictors of best-performing model (Cubist)') %>%
     kable_classic(full_width=F)
 
+plot(varImp(fitcub1), top=10, main="Top 10 predictors of best-performing model (Cubist)")
+
 ```
 
 All three classes of models (linear, non-linear, and tree-based) placed manufacturing process (MP) 32 as its most important predictor. MP 09 factored very high in all three as well (second in the linear and non-linear and fourth in the tree-based models), as did MP 13 (third in the linear and non-linear models and fifth in the tree-based models). Interestingly, the tree-based models ranked biologial material (BM) 06 as the second-most important predictor, while neither the linear nor non-linearl models included any BM predictors. This may be due to the tendency of trees to boost the prediction importance of variables that are related in a collinear fashion.
