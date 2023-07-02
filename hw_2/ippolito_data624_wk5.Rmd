@@ -417,9 +417,15 @@ rfImp1 <- varImp(model1, scale = FALSE)
 
 ```{r}
 
-
+# Display importance values
+rfImp1 %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Relative importance of predictors') %>%
+    kable_classic(full_width=F)
 
 ```
+
+As shown, the uninformative predictors (V6-V10) have a significantly lower relative importance in the model, which is consistent with our earlier findings.
 
 #### (b)
 
@@ -432,19 +438,47 @@ cor(simulated$duplicate1, simulated$V1)
 
 ```
 
-```{r}
-
-
-
-```
-
 **Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?**
 
 ```{r}
 
+# Fit random forest to the new data with the highly corrected predictors
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
 
+# Display results
+rfImp2 %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Relative importance of predictors - with highly correlated variables') %>%
+    kable_classic(full_width=F)
 
 ```
+
+Adding the duplicate1 variable caused the relative importance of V1 to decrease, while that of duplicate1 factored prominently in terms of importance--just below V1. In effect, the two variables "shared" how important they were in the model. This is analogous to the two surface area variables in the solubility data discussed in the textbook (KJ p. 186, 202-203). If another variable that is highly correlated to V1 were added to the data set, we would expect a further reduction in the importances of V1 and duplicate1, effectively sharing the importance between all three variables.
+
+```{r}
+
+# Add another variable that is highly correlated with V1
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate2, simulated$V1)
+
+# Fit random forest to the new data with the highly corrected predictors
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE)
+
+# Display results
+rfImp3 %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Relative importance of predictors - with highly correlated variables') %>%
+    kable_classic(full_width=F)
+
+```
+
+As shown in the table, the relative importances of V1 and duplicate1 decreased with the introduction of variable duplicate2. The sum of these three importances are roughly on par with the importance of V1 in the first model and the sum of v1 + duplicate1 in the second model. This is consistent with the way regression trees are sensitive to highly correlated variables.
 
 #### (c)
 
@@ -452,19 +486,197 @@ cor(simulated$duplicate1, simulated$V1)
 
 ```{r}
 
+# Init results table
+dfr <- data.frame(matrix(nrow=0, ncol=3))
+colnames(dfr) <- c('Model', 'Variable', 'Rank')
 
+# Fit conditional inference random forest model
+library(party)
+cimodel1 <- cforest(y ~ ., data=simulated)
+
+# Display variable importances - without conditional inference
+data.frame(Overall=varimp(cimodel1, conditional=F)) %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Relative importance of predictors - without conditional inference') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Random forest (no conditional inference)', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+# Display variable importances - with conditional inference
+tmpdf <- data.frame(Overall=varimp(cimodel1, conditional=T))
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Relative importance of predictors - with conditional inference') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Random forest (with conditional inference)', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
 
 ```
+
+Using conditional inference has the effect of lowering the importance of the two variables that are highly correlated with V1. Variable V1 itself remained third in the order of relative importance among other variables. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
 
 #### (d)
 
 **Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?**
 
+First try a basic CART model.
+
 ```{r}
 
+# Basic CART
+library(rpart)
+set.seed(77)
+fitcart1 <- rpart(y ~ ., data=simulated)
+tmpdf <- varImp(fitcart1)
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Variable imporance - basic CART') %>%
+    kable_classic(full_width=F)
 
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Basic CART', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
 
 ```
+
+Try a CART model with conditional inference.
+
+```{r}
+
+# Basic CART with conditional inference
+library(party)
+set.seed(77)
+fitcart2 <- ctree(y ~ ., data=simulated)
+tmpdf <- data.frame(Overall=attributes(fitcart2)$tree$criterion$statistic)
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Variable imporance - CART with conditional inference') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Basic CART with conditional inference', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Regression model tree.
+
+```{r}
+
+# Regression model tree
+library(RWeka)
+set.seed(77)
+fitrmt1 <- M5P(y ~ ., data=simulated)
+fitrmt1
+
+```
+
+Rule-based model tree.
+
+```{r}
+
+# Rule-based model tree
+set.seed(77)
+fitrmt2 <- M5Rules(y ~ ., data=simulated)
+fitrmt2
+
+```
+
+Bagged tree.
+
+```{r}
+
+# Bagged tree
+library(ipred)
+set.seed(77)
+fitbag1 <- bagging(y ~ ., data=simulated)
+tmpdf <- varImp(fitbag1)
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Variable imporance - bagged tree') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Bagged tree', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Boosted tree.
+
+```{r}
+
+# Boosted tree
+library(gbm)
+set.seed(77)
+fitgbm1 <- gbm(y ~ ., data=simulated, distribution='gaussian', n.trees=1000)
+tmpdf <- varImp(fitgbm1, numTrees=1000)
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Variable imporance - boosted tree (1000 iterations)') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Boosted tree', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+library(Cubist)
+set.seed(77)
+fitcub1 <- cubist(x=simulated %>% dplyr::select(-y), y=simulated$y)
+tmpdf <- varImp(fitcub1, numTrees=1000)
+tmpdf %>%
+    arrange(desc(Overall)) %>%
+    kbl(caption='Variable imporance - cubist') %>%
+    kable_classic(full_width=F)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Cubist', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Compare variable importance of the models.
+
+```{r warning=F}
+
+# Plot variable importance
+dfr %>%
+    filter(Variable %in% c('V1', 'duplicate1', 'duplicate2')) %>%
+    ggplot(aes(x=factor(Variable, level=c('V1', 'duplicate1', 'duplicate2')), y=11-Rank, group=Model, color=Model, shape=Model)) +
+    geom_point() +
+    geom_line() +
+    scale_y_discrete(name='Rank', limits=rev(factor(seq(1, 10)))) +
+    xlab('Variable') +
+    ggtitle('Comparison of variable importance of highly correlated variables')
+
+```
+
+As shown in the graph, most trees tend to split the variable importance among the three correlated predictors, although most downplayed the importance of the second duplicated variable. The boosted tree and basic CART with conditional inference models seemed to handle duplicated variables the best, while the bagged tree performed poorly in that respect.
 
 ### 8.2
 
@@ -472,57 +684,196 @@ cor(simulated$duplicate1, simulated$V1)
 
 ```{r}
 
-
+# see p. 182
 
 ```
 
 ### 8.3
 
-In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
-
-```{r}
-
-
-
-```
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9.
 
 #### (a)
 
 **Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?**
 
-```{r}
+If the learning rate is set to a low value, there is less of a penalty against larger coefficients; therefore, less influential predictors will remain small relative to more influential predictors. On the other hand, if the learning rate is high, the penalty against larger coefficients will be greater, resulting in reduced influence for these predictors. The idea behind increasing the learning rate is to try reducing overfitting. This results in fewer variables with greater importance--i.e., a more parsimonious model. The model on the left, with a lower learning rate, could be overfit, as there are more variables with greater importance (KJ pp. 206-207).
 
-
-
-```
+Likewise, as the bagging fraction increases, a greater proportion of the samples are used in each model; this results the same variables being used in many of the trees, in effect increasing the importance of those variables and causing the steeper gradient exhibited by the graph with the higher bagging fraction.
 
 #### (b)
 
 **Which model do you think would be more predictive of other samples?**
 
-```{r}
-
-
-
-```
+The model on the right would most likely yield better predictive performance than the model on the left. This is because the left model would prone to overfitting and, additionally, uses less of the training data at each iteration to build the model. In general, models that are overfit and which use a dataset that underrepresents the larger population of the data have poorer predictive performances.
 
 #### (c)
 
 **How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?**
 
+We would expect the slope of the predictor importance to be steeper if the interaction depth were increased. Because trees with more levels will have a greater number of weak predictors than less complex trees, the difference between strong and weak predictors will be more dramatic, resulting in a higher gradient between the two.
+
+### 8.7
+
+**Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models.**
+
+We'll load, preprocess, and split the data as before.
+
 ```{r}
 
+# Load data
+library(AppliedPredictiveModeling)
+data(ChemicalManufacturingProcess)
+dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
+
+# Impute missing values
+#imp <- mice(dfchem, printFlag=F)
+imp <- knnImputation(dfchem, k=3)
+dfchem2 <- complete(imp)
+
+# Set seed
+set.seed(77)
+
+# Corr plot
+corr1 <- cor(dfchem2)
+high_corr <- findCorrelation(corr1, cutoff=0.9, exact=T, verbose=F, names=F)
+
+# Remove the highly correlated variables
+dfchem3 <- dfchem2[,-high_corr]
+
+# Remove NZV features
+tmp_nzv <- nearZeroVar(dfchem3)
+dfchem4 <- dfchem3[,-tmp_nzv]
+
+# Split into train/test; createDataPartition generates indicies of the training set
+train_indices <- createDataPartition(dfchem4$Yield, p=0.80, times=1, list=F)
+dftrain <- dfchem4[train_indices,]
+dftest <- dfchem4[-train_indices,]
+
+# Separate outcome and predictors
+trainx <- dftrain %>% dplyr::select(-Yield)
+trainy <- dftrain$Yield
+testx <- dftest %>% dplyr::select(-Yield)
+testy <- dftest$Yield
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Results data frame
+dfr <- data.frame(matrix(nrow=10, ncol=3))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'Train.RMSE')
+
+```
+
+Basic CART model tuned using complexity parameter.
+
+```{r}
+
+# Basic CART model - tuned using complexity parameter
+set.seed(77)
+fitcart1 <- train(trainx, trainy, method='rpart', tuneLength=10, trControl=ctrl)
+fitcart1
+dfr[1,] = data.frame(
+    Model='Basic CART (tuned w/complexity parameter)', 
+    Tuning.Parameters=paste0('cp=', fitcart1$bestTune[['cp']]), 
+    Train.RMSE=min(fitcart1$results[['RMSE']])
+)
 
 
 ```
 
-### 8.7
-
-Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+Basic CART model tuned using node depth.
 
 ```{r}
 
+# Basic CART model - tuned using complexity parameter
+set.seed(77)
+fitcart2 <- train(trainx, trainy, method='rpart2', tuneLength=10, trControl=ctrl)
+fitcart2
+dfr[2,] = data.frame(
+    Model='Basic CART (tuned w/node depth)', 
+    Tuning.Parameters=paste0('maxdepth=', fitcart2$bestTune[['maxdepth']]), 
+    Train.RMSE=min(fitcart2$results[['RMSE']])
+)
 
+```
+
+Bagged CART.
+
+```{r}
+
+# Bagged CART
+set.seed(77)
+fitbag1 <- train(trainx, trainy, method='treebag', trControl=ctrl)
+fitbag1
+dfr[3,] = data.frame(
+    Model='Bagged CART', 
+    Tuning.Parameters='', 
+    Train.RMSE=min(fitbag1$results[['RMSE']])
+)
+
+```
+
+Random forest.
+
+```{r}
+
+# Random forest
+set.seed(77)
+fitrf1 <- train(trainx, trainy, method='rf', tuneLength=10, trControl=ctrl)
+fitrf1
+dfr[4,] = data.frame(
+    Model='Random forest', 
+    Tuning.Parameters=paste0('mtry=', fitrf1$bestTune[['mtry']]), 
+    Train.RMSE=min(fitrf1$results[['RMSE']])
+)
+
+```
+
+Stochastic gradient boosting.
+
+```{r message=FALSE}
+
+# Had to set message=FALSE to prevent thousands of trace messages
+
+# Stochastic gradient boosting
+gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
+                       .n.trees=seq(100, 1000, by=50),
+                       .shrinkage=c(0.01, 0.1),
+                       .n.minobsinnode=10)
+set.seed(77)
+fitgbm1 <- train(trainx, trainy, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
+
+```
+
+```{r}
+
+fitgbm1
+dfr[5,] = data.frame(
+    Model='Stochastic gradient boosting', 
+    Tuning.Parameters=paste0('interaction.depth=', fitgbm1$bestTune[['interaction.depth']], 
+                             ', n.trees=', fitgbm1$bestTune[['n.trees']], 
+                             ', shrinkage=', fitgbm1$bestTune[['shrinkage']],
+                             ', n.minobsinnode=10'), 
+    Train.RMSE=min(fitgbm1$results[['RMSE']])
+)
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+set.seed(77)
+fitcub1 <- train(trainx, trainy, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+fitcub1
+dfr[6,] = data.frame(
+    Model='Cubist', 
+    Tuning.Parameters=paste0('committees=', fitcub1$bestTune[['committees']], 
+                             ', neighbors=', fitcub1$bestTune[['neighbors']]), 
+    Train.RMSE=min(fitcub1$results[['RMSE']])
+)
 
 ```
 
@@ -530,11 +881,60 @@ Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. 
 
 **Which tree-based regression model gives the optimal resampling and test set performance?**
 
+First generate predictions on the test set for each model, then show the summary of results.
+
 ```{r}
 
+# Add column for test set RMSE to results data frame
+dfr$Test.RMSE = NA
 
+# Predict using test set
+
+# Basic CART model - with complexit parameter
+predy <- predict(fitcart1, newdata=as.matrix(testx))
+dfr[1, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Basic CART model - with node depth
+predy <- predict(fitcart2, newdata=as.matrix(testx))
+dfr[2, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Bagged CART
+predy <- predict(fitbag1, newdata=as.matrix(testx))
+dfr[3, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Random forest
+predy <- predict(fitrf1, newdata=as.matrix(testx))
+dfr[4, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Stochastic gradient boosting
+predy <- predict(fitgbm1, newdata=as.matrix(testx))
+dfr[5, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Cubist
+predy <- predict(fitcub1, newdata=as.matrix(testx))
+dfr[6, 'Test.RMSE'] <- accuracy(predy, testy)[[2]]
+
+# Model summary
+dfr %>%
+    filter(!is.na(Train.RMSE)) %>%
+    mutate(Train.RMSE=round(Train.RMSE, 3)) %>%
+    arrange(Train.RMSE) %>%
+    kbl(caption='Model summary') %>%
+    kable_classic(full_width=F)
+
+# Graph results
+dfr %>%
+    filter(!is.na(Train.RMSE)) %>%
+    ggplot() +
+    geom_point(aes(x=reorder(Model, Train.RMSE), y=Train.RMSE, color='10xCV Training Set'), shape=1) +
+    geom_point(aes(x=Model, y=Test.RMSE, color='Validation Set'), shape=2) +
+    coord_flip() +
+    ylab('RMSE') +
+    ggtitle('Model summary')
 
 ```
+
+The stochastic gradient boosting model
 
 #### (b)
 
