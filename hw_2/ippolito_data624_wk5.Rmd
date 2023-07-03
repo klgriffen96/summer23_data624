@@ -958,8 +958,29 @@ All three classes of models (linear, non-linear, and tree-based) placed manufact
 
 **Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?**
 
-```{r}
+```{r fig.width=10, fig.height=8}
 
+# Try plotting cubist trees
+if (1 == 0) {
+    library(ggraph)
+    library(igraph)
+    fitcub1$finalModel$splits
+    g <- graph_from_data_frame(fitcub1$finalModel$splits)
+    g
+    ggraph(g, layout='dendrogram', circular=F) + 
+        geom_edge_diagonal() +
+        geom_node_point() +
+        theme_void() + 
+        geom_node_label(aes(label=name))
+}
 
+# Give up and plot single tree; first fit a single-tree CART model
+fitcart3 <- rpart(Yield ~ ., data=dfchem3)
+
+# Plot
+library(rattle)
+fancyRpartPlot(fitcart3, palette='YlGnBu', caption="Single CART")
 
 ```
+
+The single-CART tree view confirms that MP 32 is the most important predictor, as it was with the best-performing tree, linear, and non-linear models. It is interesting to note that the single tree is split on multiple biological materials, while the optimal Cubist model only lists a single one (BM 06) which doesn't factor prominently in the single tree (it is on the fifth level). So while this may provide some information about the relationship between yield and the predictors, it doesn't necessarily provide the **best** information.
