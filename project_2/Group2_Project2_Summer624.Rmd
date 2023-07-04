@@ -44,7 +44,9 @@ req <- GET(github_link,
           # write result to disk
            write_disk(path = temp_file))
 
-df_model <- readxl::read_xlsx(temp_file)
+df_model <- readxl::read_excel("C:/Users/kgriffen/Downloads/StudentData - TO MODEL.xlsx", sheet = "Subset", .name_repair = "universal")
+# df_model <- readxl::read_excel("C:/Users/kgriffen/Downloads/StudentData - TO MODEL.xlsx", sheet = "Subset", .name_repair = "universal")
+
 
 head(df_model, 10) |>
   flextable()
@@ -55,7 +57,7 @@ req <- GET(github_link,
           # write result to disk
            write_disk(path = temp_file))
 
-df_predict <- readxl::read_xlsx(temp_file)
+df_predict <- readxl::read_excel(temp_file)
 
 head(df_predict, 10) |>
   flextable()
