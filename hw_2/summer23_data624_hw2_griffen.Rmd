@@ -888,3 +888,46 @@ df_grocery <- read.csv("https://raw.githubusercontent.com/klgriffen96/summer23_d
 
 ```
 
+http://r-statistics.co/Association-Mining-With-R.html
+https://subscription.packtpub.com/book/data/9781788621878/1/ch01lvl1sec10/association-rule-mining
+
+
+```{r}
+library(arules)
+
+transactions.obj <- read.transactions(file = "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv",
+ sep = ",", format = "basket", 
+ rm.duplicates = FALSE,
+ quote = "", skip = 0,
+ encoding = "unknown")
+
+
+data.frame(head(sort(itemFrequency(transactions.obj, type = "absolute")
+ , decreasing = TRUE), 10)) 
+
+head(sort(itemFrequency(transactions.obj, type = "absolute")
+ , decreasing = FALSE), 10) # Least frequent
+
+itemFrequencyPlot(transactions.obj,topN = 25)
+
+
+# Interest Measures
+support <- 0.01
+confidence <- 0.4 # Interest Measure
+
+parameters = list(
+ support = support,
+ confidence = confidence,
+ minlen = 2, # Minimal number of items per item set
+ maxlen = 10, # Maximal number of items per item set
+ target = "rules"
+ )
+
+rules <- apriori(transactions.obj, parameter = parameters)
+rules.df <- data.frame(rules = labels(rules) ,rules@quality)
+
+head(rules.df |> arrange(desc(lift)))
+```
+
+
+
