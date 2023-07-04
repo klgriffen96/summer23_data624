@@ -723,6 +723,7 @@ i <- createDataPartition(cmp_i$Yield,
 x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
 y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
 
+data.train <- cmp_i[i,]
 data.train.x <- x[i,]
 data.train.y <- y[i]
 data.test.x <- x[-i,]
@@ -732,8 +733,158 @@ data.test.y <- y[-i]
 (a) Which tree-based regression model gives the optimal resampling and test
 set performance?
 
+There are several tree-based regression models that we can use. 
+
+#### Single Tree
+
+```{r}
+library(rpart)
+
+rpartTree <- rpart(Yield ~ ., data = data.train)
+
+set.seed(100)
+
+rpartTune <- train(data.train.x, data.train.y,
+                   method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+
+rpartTune
+
+rpartPredict <- predict(rpartTune, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.rpart <- postResample(pred = rpartPredict, obs = data.test.y)
+
+
+```
+
+#### Model Tree
+
+```{r}
+library(RWeka)
+ m5tree <- M5P(Yield ~ ., data = data.train, control = Weka_control(M = 10))
+ 
+set.seed(100)
+m5Tune <- train(data.train.x, data.train.y, method = "M5", trControl = trainControl(method = "cv"), control = Weka_control(M = 10))
+
+m5Tune
+
+m5Predict <- predict(m5Tune, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.m5 <- postResample(pred = m5Predict, obs = data.test.y)
+
+```
+
+#### Bagged Tree
+
+```{r}
+library(ipred)
+
+baggedTree <- bagging(Yield ~ ., data = data.train)
+
+bagPredict <- predict(baggedTree, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.bag <- postResample(pred = bagPredict, obs = data.test.y)
+```
+
+#### Random Forest
+
+```{r}
+library(randomForest)
+rfModel <- randomForest(Yield ~ ., data = data.train, importance = TRUE, ntrees = 1000)
+
+rfPredict <- predict(rfModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.rf <- postResample(pred = rfPredict, obs = data.test.y)
+```
+
+#### Boosted Tree
+
+```{r}
+
+gbmGrid <- expand.grid(.interaction.depth = seq(1, 7, by = 2),
+                       .n.trees = seq(100, 1000, by = 50),
+                       .shrinkage = c(0.01, 0.1),
+                       .n.minobsinnode = 1)
+set.seed(100)
+gbmTune <- train(data.train.x, data.train.y, method = "gbm", tuneGrid = gbmGrid, verbose = FALSE)
+
+gbmPredict <- predict(gbmTune, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.gbm <- postResample(pred = gbmPredict, obs = data.test.y)
+  
+```
+
+#### Cubist 
+
+```{r}
+
+cubistTuned <- train(data.train.x, data.train.y, method = "cubist")
+
+cubistPredict <- predict(cubistTuned, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+
+p.cubist <- postResample(pred = cubistPredict, obs = data.test.y)
+```
+
+Comparison:
+
+```{r}
+p.rpart
+p.m5
+p.bag
+p.rf
+p.gbm
+p.cubist
+
+cubistTuned
+```
+
+The lowest RMSE and highest Rsquared was the cubist implementation. :RMSE was used to select the optimal model using the smallest value.
+The final values used for the model were committees = 20 and neighbors = 5."
+
 (b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+```{r}
+varImp(cubistTuned)
+```
+
+The top 10 predictors for the optimal and nonlinear models are dominated by process predictors. This is consistent with the other models.
 
 (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
 
+```{r, fig.height=10}
+
+library(partykit)
+rpartTree2 <- as.party(rpartTree)
+plot(rpartTree2)
+```
+
+Yes this provides more information. It looks like higher Manufacturing Process 32 results in higher yield overall. You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
+
 ### Recommender Problem
+
+Imagine 10000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer’s basket – and therefore ‘Market Basket Analysis’.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a transaction and each column in a row represents an item.
+
+Here is the dataset = GroceryDataSet.csv  (comma separated file)
+
+You assignment is to use R to mine the data for association rules.  You should report support, confidence and lift and your top 10 rules by lift.  Turn in as you would the other problems from HA and KJ.  You should packaged this with your HW #2 set.
+
+```{r}
+df_grocery <- read.csv("https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv", header = FALSE)
+
+```
+
