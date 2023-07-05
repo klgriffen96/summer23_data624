@@ -1,23 +1,26 @@
 ---
-title: "Data 624: Predictive Analytics HW:2"
-author: "Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden"
+title: 'Data 624: Predictive Analytics HW:2'
+author: 'Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden'
 date: "2023-06-19"
 output:
+  word_document:
+    toc: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
   html_document:
     theme: yeti
     highlight: tango
     toc: yes
     toc_float: yes
-  pdf_document:
-    dev: cairo_pdf
-    toc: yes
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
 
 knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T)
 library(tidyverse)
-library(kableExtra)
+library(flextable)
 library(DMwR2)
 library(gridExtra)
 library(AppliedPredictiveModeling)
@@ -66,33 +69,17 @@ We'll first generate a summary to get a first look at the data and to show missi
 
 # Show missing value counts
 dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
-data.frame(Missing=colSums(is.na(dfchem))) %>%
+df_na <- data.frame(Predictor = colnames(dfchem), Missing=colSums(is.na(dfchem))) %>%
     filter(Missing > 0) %>%
-    arrange(desc(Missing)) %>%
-    kbl(caption='Missing value counts') %>%
-    kable_classic(full_width=F)
+    arrange(desc(Missing)) 
+
+flextable(df_na) |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
 ```
-To get additional experience, we will try to do some work using python. The library `retriculate` helps with passing variables between r and python. The python anaconda distribution comes with a lot of preloaded libraries helpful for datascience.
-
-```{r}
-library(reticulate)
-use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
-```
-
-By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
-
-```{python}
-type(r.dfchem)
-r.dfchem.shape
-````
-So we know that python has interpreted the dataframe in r as a pytjon pandas dataframe. The dimensions are what we expected 176 observations of 58 variables.
-
-Now lets recreate a list of missing variables to understand where the NAs are.
-
-```{python}
-r.dfchem.isna().sum()
-```
-
 
 Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
 
@@ -103,19 +90,7 @@ dfimp <- knnImputation(ChemicalManufacturingProcess,k=3)
 print(paste0('Missing values after imputation: ', sum(is.na(dfimp))))
 
 ```
-Now lets impute with python. We couldn't get the KNN imputer in python to work, so using the simple imputer with mean imputation instead.
 
-```{python}
-from sklearn.impute import SimpleImputer
-import pandas as pd
-
-imputer = SimpleImputer(strategy='mean')
-pdfimp = r.dfchem
-imputer = imputer.fit(pdfimp)
-pdfimp.iloc[:,:] = imputer.transform(r.dfchem)
-pdfimp.isna().sum()
-pdfimp.shape
-```
 
 ### (c)
 
@@ -134,32 +109,14 @@ dfimp.x <- dfimp.x[-nzv]
 
 ```
 
-Check near zero variance in python.
-
-```{python}
-from sklearn.feature_selection import VarianceThreshold
-
-var_thr = VarianceThreshold(threshold = 0.02) #Removing both constant and quasi-constant
-var_thr.fit(pdfimp)
-
-concol = [column for column in pdfimp.columns 
-          if column not in pdfimp.columns[var_thr.get_support()]]
-
-for features in concol:
-    print(features)
-```
-
-According to python, there are more near zero variance variables, we will drop them.
-
-```{python}
-
-pdf0var = pdfimp.drop(concol,axis=1)
-```
 
 Next we can inspect the outliers.
 
 ```{r, warning=FALSE}
 # check for outliers
+
+df_outliers <- data.frame(predictor = c(), outliers = c())
+
 for (i in 1:length(dfimp.x)){
   data <- dfimp.x[[i]]
   quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
@@ -168,35 +125,21 @@ for (i in 1:length(dfimp.x)){
   Upper <- quartiles[2] + 1.5*IQR
   outliers <- which(data < Lower | data > Upper)
   data[outliers] <- NA
-  print(paste0(colnames(dfimp.x[i]), " outliers: ", length(outliers)))
+  # print(paste0(colnames(dfimp.x[i]), " outliers: ", length(outliers)))
+  df_temp <- data.frame(predictor = colnames(dfimp.x[i]),
+                        outliers = length(outliers))
+  df_outliers <- rbind(df_outliers, df_temp)
 }
 
+df_outliers |>
+    arrange(desc(outliers))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
 ```
 
-We can do this check in python as well.
-
-```{python}
-import numpy as np
-
-for i in range(1,pdf0var.shape[1]):
-  # IQR
-  # Calculate the upper and lower limits
-  Q1 = pdf0var.iloc[:, i].quantile(0.25)
-  Q3 = pdf0var.iloc[:, i].quantile(0.75)
-  IQR = Q3 - Q1
-  lower = Q1 - 1.5*IQR
-  upper = Q3 + 1.5*IQR
-   
-  # Create arrays of Boolean values indicating the outlier rows
-  upper_array = np.where(pdf0var.iloc[:, i]>=upper)[0]
-  lower_array = np.where(pdf0var.iloc[:, i]<=lower)[0]
-  
-  total = upper_array.shape[0] + lower_array.shape[0]
-  
-  print(pdf0var.columns[i], total)
-```
-
-You can see the function worked the same in python and in r.
 
 Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
 
@@ -209,25 +152,17 @@ skew.vals <- apply(dfimp.x, MARGIN = 2, skewness) |>
                   filter(skew > 2 | skew < -2) 
 
 sprintf("Number of skewed variables: %d",nrow(skew.vals))
-kable(skew.vals)
+
+df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
+
+df_skews |>
+    arrange(desc(Skew))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
 ```
-
-```{python}
-
-from scipy.stats import skew
-
-all_skewed = []
-
-for i in range(1,pdf0var.shape[1]):
-  # Calculate the skewness
-  s = skew(pdf0var.iloc[:, i], axis=0, bias=True)
-  if (s > 2.0 or s < -2.0):
-    print(pdf0var.columns[i], s)
-    all_skewed.append(i)
-  
-```
-
-There is a small missmatch between python and rs skew calculation but overall they are similar.
 
 Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
 
@@ -235,11 +170,17 @@ Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount o
 trans <- preProcess(dfimp.x, method = c("YeoJohnson", "center","scale"))
 df.x <- predict(trans, dfimp.x)
 
-# take a look at the distributions of predictors
-for (i in 1:length(df.x)){
-  p <- df.x |> ggplot(aes(x = df.x[[i]])) + geom_histogram(bins = 30)
-  print(p)
-}
+## TODO: Grid ## printing plist in loop works fine, but fails with grid.arrange because they are all the same
+# plist <- list()
+# 
+# for (i in 1:length(df.x)){
+#   plist[[i]] <- df.x |> ggplot(aes(x = df.x[[i]])) + geom_histogram(bins = 30) + xlab(colnames(df.x)[i])
+# }
+# 
+# library(gridExtra)
+# n <- length(plist)
+# nCol <- floor(sqrt(n))
+# do.call("grid.arrange", c(plist, ncol=nCol))
 ```
 
 We can take another look now at skewness.
@@ -252,55 +193,25 @@ skew.vals <- apply(df.x, MARGIN = 2, skewness) |>
                   arrange(desc(skew))
 
 sprintf("Number of skewed variables: %d",nrow(skew.vals))
-kable(skew.vals)
+
+
+df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
+
+df_skews |>
+    arrange(desc(Skew))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
 ```
 
 Interestingly, the "YeoJohnson" transformation did not correct all of the skewnesses.
 
-Lets try normalization first. Based on the fact that our data does contain outliers, a scaling mechanism robust to this may be needed (https://scikit-learn.org/stable/modules/preprocessing.html)
-
-```{python}
-from sklearn.preprocessing import RobustScaler
-import matplotlib.pyplot as plt
-from matplotlib import colors
-from matplotlib.ticker import PercentFormatter
-
-pdfx = pdf0var.iloc[:,1:]
-
-robust_scaler = RobustScaler()
-pdfscaled = robust_scaler.fit_transform(pdfx.to_numpy())
-pdfscaled = pd.DataFrame(pdfscaled, columns=pdfx.columns)
-
-for i in range(1,pdf0var.shape[1]):
-  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
-  n_bins = 30
-  axs[0].hist(pdfx.iloc[:, i], bins=n_bins)
-  axs[1].hist(pdfscaled.iloc[:, i], bins=n_bins)
-  plt.show()
-  
-```
-
-Now that we know the scaling is correct, we can move onto the YeoJohnson transformation.
-
-```{python}
-from sklearn.preprocessing import PowerTransformer
-
-power_transfromer = PowerTransformer(method='yeo-johnson', standardize=False)
-pdfyeo = power_transfromer.fit_transform(pdfscaled.to_numpy())
-pdfyeo = pd.DataFrame(pdfyeo, columns=pdfscaled.columns)
-
-for i in range(1,pdf0var.shape[1]):
-  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
-  n_bins = 30
-  axs[0].hist(pdfscaled.iloc[:, i], bins=n_bins)
-  axs[1].hist(pdfyeo.iloc[:, i], bins=n_bins)
-  plt.show()
-
-```
-
 Now we take a look at a correlation matrix.
 
-```{r}
+```{r width = 10}
 dfimp.x |>
   cor() |>
   round(2) |>
@@ -310,13 +221,6 @@ dfimp.x |>
             type = "lower")
 ```
 
-Now we can check the correlation matrix in python.
-
-```{python}
-
-plt.matshow(pdfyeo.corr())
-plt.show()
-```
 
 Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
 
@@ -469,7 +373,7 @@ dfimp |>
             type = "lower")
 ```
 
-We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
+This correlation matrix helps make clear processes that can be increased or decreased to improve yield. We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
 
 
 ### 7.2
@@ -502,6 +406,11 @@ testData$x <- data.frame(testData$x)
 Tune several models on these data. For example:
 
 ```{r}
+
+# Results data frame
+df_results <- data.frame(matrix(nrow=4, ncol=3))
+colnames(df_results) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
 library(caret)
 knnModel <- train(x = trainingData$x, 
                     y = trainingData$y, 
@@ -513,11 +422,159 @@ knnModel
 knnPred <- predict(knnModel, newdata = testData$x)
 ## The function 'postResample' can be used to get the test set
 ## perforamnce values
-postResample(pred = knnPred, obs = testData$y)
+knn.results <- postResample(pred = knnPred, obs = testData$y)
+
+df_results[1,] = data.frame(
+    Model='knnModel', 
+    Tuning.Parameters=paste0('k=', knnModel$bestTune[['k']]), 
+    RMSE=min(knn.results[['RMSE']])
+)
+
+plot(knnModel)
 
 ```
 
-Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+### NEURAL NETWORK MODEL
+
+First we remove predcictors to ensure that the maximum absolute pairwise correlation between the predictors is less than 0.75,
+
+```{r}
+findCorrelation(cor(trainingData$x), cutoff = .75)
+```
+
+No predictors exceed a pairwise correlation of .75 or greater. Next, we create a specific candidate set of models to evaluate:
+
+```{r, warning = FALSE, message = FALSE, cache = TRUE}
+
+library(doParallel)
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
+# specify and store the resampling method
+ctrl <- trainControl(method = "cv", 
+                     allowParallel = TRUE,
+                     number = 10)
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1),
+                        .size = c(1:10),
+                        .bag = FALSE)
+
+set.seed(100) 
+nnetModel <- train(trainingData$x, trainingData$y,
+                  method = "avNNet",
+                  tuneGrid = nnetGrid,
+                  trControl = ctrl,
+                  preProc = c("center","scale"),
+                  linout = TRUE,
+                  trace = FALSE,
+                  MaxNwts = 10 * (ncol(trainingData$x) +  1) + 10 + 1,
+                  maxit = 500,
+                  allowParallel = TRUE)
+
+
+stopCluster(cl)
+registerDoSEQ()
+
+nnetModel
+
+```
+
+```{r}
+nnetPred <- predict(nnetModel, newdata = testData$x)
+nnet.results <- postResample(pred = nnetPred, obs = testData$y)
+
+df_results[2,] = data.frame(
+    Model='Neaural Net', 
+    Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
+    RMSE=min(nnet.results[['RMSE']])
+)
+plot(nnetModel)
+```
+
+### MARS MODEL (Multivariate Adaptive Regression Splines)
+
+```{r, message=FALSE, warning=FALSE, cache = TRUE}
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+set.seed(100)
+
+marsModel <- train(trainingData$x, trainingData$y,
+                   method = "earth",
+                   # Explicitly declare the candidate models to test,
+                   tuneGrid = marsGrid,
+                   trControl = ctrl)
+
+marsModel
+```
+
+```{r, cache = TRUE}
+marsPred <- predict(marsModel, newdata = testData$x)
+mars.results <- postResample(pred = marsPred, obs = testData$y)
+
+df_results[3,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('nprune=', marsModel$bestTune[['nprune']], ', degree=', marsModel$bestTune[['degree']]),
+    RMSE=min(mars.results[['RMSE']])
+)
+plot(marsModel)
+
+```
+
+### SVM (Support Vector Machines)
+
+```{r, cache = TRUE}
+svmModel <- train(trainingData$x, trainingData$y,
+                  method = "svmRadial",
+                  preProcess = c("center","scale"),
+                  tuneLength = 14,
+                  trControl = ctrl)
+
+svmModel
+```
+
+```{r, cache = TRUE}
+svmPred <- predict(svmModel, newdata = testData$x)
+svm.results <- postResample(pred = svmPred, obs = testData$y)
+
+df_results[4,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('sigma=', svmModel$bestTune[['sigma']], ', C=', svmModel$bestTune[['C']]),
+    RMSE=min(svm.results[['RMSE']])
+)
+plot(svmModel)
+```
+
+Now we can compare the final results,
+
+```{r}
+df_results |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+```
+
+The MARS model performs best according to the RMSE. The RMSE was significantly less than that of its closest competitor, SVM. The model-averaged neural network model performed similarly to SVM. The K-nearest neighbor model performed poorly, with an RMSE well above the others. This is not surprising, as KNN models typically perform poorly when there are predictors that don't contribute significantly to the response; as stated in the problem description, in this data set there are five such predictors. The other models account for "noisy" predictors by pruning or applying a weight or decay factor.
+
+
+```{r}
+vimp <- varImp(marsModel) 
+df_vimp <- data.frame(Variable = rownames(vimp$importance), Importance = vimp$importance)
+df_vimp |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+The MARS model does indeed select X1-X5 as the most informative variables! It does set X3 to 0, interestingly. 
 
 ### 7.5
 
@@ -525,9 +582,223 @@ Exercise 6.3 describes data for a chemical manufacturing process. Use the same d
 
 (a) Which nonlinear regression model gives the optimal resampling and test  set performance?
 
+```{r}
+set.seed("09041996")
+data("ChemicalManufacturingProcess")
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+cmp_i2 <- cmp_i |> select(-Yield)
+
+trans <- preProcess(cmp_i2, method = c("center", "scale", "YeoJohnson", "nzv"))
+cmp_i2 <- predict(trans, cmp_i2)
+
+cmp_i2$Yield <- cmp_i$Yield
+
+cmp_i <- cmp_i2
+
+i <- createDataPartition(cmp_i$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
+```
+
+
+```{r}
+library(caret)
+
+# Results data frame
+df_results <- data.frame(matrix(nrow=4, ncol=3))
+colnames(df_results) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
+knnModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "knn",
+                    tuneLength = 10)
+knnModel
+
+knnPred <- predict(knnModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+knn.results <- postResample(pred = knnPred, obs = data.test.y)
+
+df_results[1,] = data.frame(
+    Model='knnModel', 
+    Tuning.Parameters=paste0('k=', knnModel$bestTune[['k']]), 
+    RMSE=min(knn.results[['RMSE']])
+)
+
+plot(knnModel)
+
+```
+
+
+Next try neural network.
+
+```{r}
+
+# remove predictors so absolute pairwise correlation is less than 0.75
+
+tooHigh <- findCorrelation(cor(data.train.x), cutoff = .75)
+
+
+trainXnnet <- data.train.x[, -tooHigh]
+testXnnet <- data.test.x[, -tooHigh]
+
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1), .size = c(1:10), .bag = FALSE)
+
+nnetModel <- train(x = trainXnnet, 
+                    y = data.train.y,
+                   method = "avNNet",
+                   tuneGrid = nnetGrid,
+                   trControl = trainControl(method = "cv"),
+                   preProc = c("center", "scale"),
+                   linout = TRUE,
+                   trace = FALSE,
+                   MaxNWts = 10 * (ncol(trainXnnet) + 1) + 10 + 1,
+                   maxit = 500,
+                   allowParallel = TRUE)
+
+stopCluster(cl)
+registerDoSEQ()
+
+nnetModel
+
+nnetPredict <- predict(nnetModel, newdata = testXnnet)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+nnet.results <- postResample(pred = nnetPredict, obs = data.test.y)
+
+df_results[2,] = data.frame(
+    Model='Neaural Net', 
+    Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
+    RMSE=min(nnet.results[['RMSE']])
+)
+plot(nnetModel)
+
+```
+
+Next try MARS. 
+
+```{r}
+
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+
+MARSModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "earth",
+                    tuneGrid = marsGrid,
+                    trControl = trainControl(method = "cv"))
+
+
+MARSModel
+
+MARSPred <- predict(MARSModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+mars.results <- postResample(pred = MARSPred, obs = data.test.y)
+
+df_results[3,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('nprune=', MARSModel$bestTune[['nprune']], ', degree=', MARSModel$bestTune[['degree']]),
+    RMSE=min(mars.results[['RMSE']])
+)
+plot(MARSModel)
+
+```
+
+Next try SVM.
+
+```{r}
+svmModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "svmRadial",
+                  tuneLength = 14,
+                  trControl = trainControl(method = "cv"))
+svmModel
+
+svmPred <- predict(svmModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+svm.results <- postResample(pred = svmPred, obs = data.test.y)
+
+df_results[4,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('sigma=', svmModel$bestTune[['sigma']], ', C=', svmModel$bestTune[['C']]),
+    RMSE=min(svm.results[['RMSE']])
+)
+plot(svmModel)
+```
+
+
+```{r}
+
+df_results |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+```
+
+The optimal resampling and test performance was from the SVM model.
+
+
 (b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
 
+```{r}
+# variable importance
+var.imp <- varImp(svmModel)
+plot(var.imp, top = 10)
+```
+
+Among the 10 most important variables, 6 are process, and 4 are biological. For the linear model, 8 were process, and 2 were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+
 (c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+```{r}
+# store 10 most important variable names
+m.imp <- var.imp$importance |>
+  data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  row.names()
+
+# correlation matrix of 10 most important variables and response variable
+cmp_i |>
+  select(all_of(c("Yield",m.imp))) |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.6,
+            type = "lower")
+```
+
+```{r}
+featurePlot(df[,m.imp], cmp_i$Yield,
+            between = list(x = 1, y = 1),
+            type = c("p","smooth"))
+```
+
+These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot correspond to the correlations in the matrix plot.
 
 ### 8.1
 
