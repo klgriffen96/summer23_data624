@@ -1268,3 +1268,193 @@ We can observe the following:
 - You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
 
 ### Recommender Problem
+
+Imagine 1000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer's basket -- and therefore 'Market Basket Analysis'.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a **transaction** and each column in a row represents an **item**.
+
+Here is the dataset = [GroceryDataSet.csv]('https://github.com/klgriffen96/summer23_data624/blob/main/hw_2/GroceryDataSet.csv') (comma separated file).
+
+Your assignment is to use R to mine the data for association rules. You should report support, confidence and lift and your top 10 rules by lift.
+
+#### Exploratory Data Analysis
+
+First, we will pull in the data (stored on github) into a dataframe. The data contains a row for every transaction. For our EDA we will want a row for every item, along with a transaction ID. 
+
+```{r}
+url <- "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv"
+data <- read.csv(url, header=FALSE)
+data[data == ""] <- NA # replace empty cells with NA
+data$tid <- as.integer(row.names(data)) # create transaction ID column using row indices
+
+# pivot data
+baskets <- data |> 
+  pivot_longer(cols = starts_with("V"), 
+               values_to = "item", 
+               values_drop_na = TRUE) |>
+  select(tid, item)
+```
+
+We can visualize the frequency of items in our baskets,
+
+```{r}
+baskets |>
+  group_by(item) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |> 
+  head(10) |>
+  ggplot(aes(x=reorder(item,count), y=count)) +
+  geom_col(fill="blue") +
+  geom_label(aes(label=count)) +
+  labs(x=NULL, y=NULL) + ggtitle('Top 10 Items') +
+  scale_y_discrete(breaks=NULL) +
+  coord_flip() + 
+  theme_classic()
+```
+
+Next we can look at the distribution of how many items were purchased in each transaction.
+
+```{r}
+baskets |>
+  group_by(tid) |>
+  summarize(total_items = n()) |>
+  ggplot(aes(x=total_items)) +
+  geom_histogram(fill="blue", bins=30) +
+  theme_classic() +
+  labs(title = "Distribution of Number of Items Purchased per Transaction")
+```
+
+#### Market Basket Analysis
+
+Now we can shift to using the functionality of the `arules` package. We will read in the file to a transactions object. The data is in "basket" format, meaning every row is a set of items that represent one transaction. After loading we can take a look at the top ten items with the `itemFrequencyPlot` function.
+
+```{r,cache=TRUE}
+library(arules)
+library(arulesViz)
+basket_tr <- read.transactions(file = "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv",
+ sep = ",", format = "basket", 
+ rm.duplicates = FALSE,
+ quote = "", skip = 0,
+ encoding = "unknown")
+
+itemFrequencyPlot(basket_tr, 
+                  topN=10, 
+                  type="absolute", 
+                  xlab="Count", 
+                  ylab="",
+                  col="blue", 
+                  main="Top 10 items",
+                  cex.names=0.8,
+                  horiz=TRUE)
+```
+
+We can confirm that this frequency plot is the same as what we generated before with our EDA step.
+
+
+Association rule mining consists of two subtasks which provide insights into the relationships between items in transactional data: 
+
+- **Frequent itemset generation** 
+- **Rule generation**
+
+##### Support    
+
+First we'll take a look at the itemsets in the data to identify the itemsets that occur most frequently. An **itemset** is a combination of items that appear together in a set of transactions. The **support** measures the frequency or occurrence of an itemset in the data by dividing the number of transactions that contain a specific itemset by the total number of transactions. High support indicates the itemset appears frequently. 
+
+```{r}
+# Frequent itemsets for all items 
+# Interest Measures
+support <- 0.01
+
+parameters = list(
+ support = support,
+ minlen = 2, # Minimal number of items per item set
+ maxlen = 10, # Maximal number of items per item set
+ target = "frequent itemsets"
+ )
+
+support_all <- apriori(basket_tr,
+                       parameter = parameters)
+
+# 10 most frequent items
+support_all |>
+  as("data.frame") |>
+  arrange(desc(support)) |>
+  head(5) |>
+  flextable() |>
+  width(width = 2) |>
+  fontsize(size = 10) |>
+  line_spacing(space = 1) |>
+  hline(part = "all")
+```
+
+Interpreting these results, the support column indicates the proportion of transactions that contain each itemset: 7.5% of all transactions contain "other vegetables" and "whole milk", 5.7% of all transactions contain "other vegetables "rolls/buns" and "whole milk", and so on. 
+
+##### Rules
+
+Extracting rules allows us to observe the support, confidence, and lift measures of frequent itemsets. 
+
+```{r}
+conf = 0.4
+support <- 0.01
+
+parameters = list(
+ support = support,
+ confidence = conf,
+ minlen = 2, # Minimal number of items per item set
+ maxlen = 10, # Maximal number of items per item set
+ target = "rules"
+ )
+
+rules <- apriori(basket_tr,
+                 parameter= parameters) 
+```
+
+The `arulesViz` package contains a number of functions that enhance graphical display of association rules. The `inspectDT` function outputs an interactive display which can be sorted by column: 
+
+```{r, cache=TRUE}
+inspectDT(rules)
+```
+
+Plotting the rules with the `engine = "plotly"` argument creates an interactive visualization that allows the user to hover over data points in order to view association rule metrics, 
+
+```{r, warning=FALSE, message=FALSE, cache=TRUE}
+plot(rules, jitter=2, engine = "plotly")
+```
+
+
+##### Confidence
+
+Each itemset consists of antecedents and consequents. **Antecedents** are the items or itemsets on the left-hand side of the association rule that represents a set of items or conditions that act as the premise or condition for the rule. **Consequents** are the items or itemsets on the right-hand side of the association rule that represents the set of items or outcomes that are predicted or observed based on the presence of the antecent. **Confidence** measures the likelihood or probability of finding the consequent item(s) in a rule given the antecedent(s). It is the proportion of transactions containing the antecedent that also contain the consequent. High confidence suggests a strong association between the antecedent and consequent. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(confidence)) |>
+  head(5) |>
+  flextable() |>
+  width(width = 2) |>
+  fontsize(size = 10) |>
+  line_spacing(space = 1) |>
+  hline(part = "all")
+```
+
+We can interpret the confidence that 58% of customers that bought "citrus fruit" and "root vegetables" also bought "other vegetables", and so on. 
+
+##### Lift     
+
+Lift measures the strength of association between the antecedent and consequent items compared to their individual occurrences. It is the ratio of the observed support to the expected support if the antecedent and consequent were independent. Lift greater than 1 indicates a positive association, while lift less than 1 indicates a negative association. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(lift)) |>
+  head(5) |>
+  flextable() |>
+  width(width = 2) |>
+  fontsize(size = 10) |>
+  line_spacing(space = 1) |>
+  hline(part = "all")
+```
+
+Again, looking at the first line, we can interpret the lift of 3.03 to represent the occurrence of the antecedent is 3.03 times *likelier* when the antecedent items are present, and so on. 
+
