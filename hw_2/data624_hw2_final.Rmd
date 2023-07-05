@@ -1036,19 +1036,235 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 (a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
 
+*The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration, subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, .9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
+
+*Boosting can be susceptible to over-fitting, as boosting will select an optimal weak learner at each iteration. To offset this, regularization or shrinkage is applied as a learning rate which represents the fraction of a current prediction to be added to the previous iteration's predictions. As the learning rate increases, a larger fraction of predictions is added to the model - but this is not a good thing. A learning rate of 1 indicates no shrinkage, high error, focusing on fewer variables, the model is fast and greedy. If the learning rate is set to a low value, there is less of a penalty against larger coefficients; therefore, less influential predictors will remain small relative to more influential predictors. On the other hand, if the learning rate is high, the penalty against larger coefficients will be greater, resulting in reduced influence for these predictors. The idea behind increasing the learning rate is to try reducing overfitting. This results in fewer variables with greater importance--i.e., a more parsimonious model. The model on the left, with a lower learning rate, could be overfit, as there are more variables with greater importance (KJ pp. 206-207).*
+
+*With a smaller learning rate and a smaller bagging fraction, the variable importance may be more evenly distributed because there will be more trees created which gives more opportunity for a variable to be deemed "important".*
+
 (b) Which model do you think would be more predictive of other samples?
 
+*A lower learning rate indicates slower learning and less errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so I believe the model on the left would be more predictive.* 
+
 (c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+*According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors." pg 205. Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. I would think that a smaller tree depth would lead to a more rapidly decreasing to 0 variable importance and a greater tree depth would have a more gradual decrease to 0. *
 
 ### 8.7
 
 Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
 
+We'll load, preprocess, and split the data as before.
+
+```{r}
+set.seed("09041996")
+data("ChemicalManufacturingProcess")
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+cmp_i2 <- cmp_i |> select(-Yield)
+
+trans <- preProcess(cmp_i2, method = c("center", "scale", "YeoJohnson", "nzv"))
+cmp_i2 <- predict(trans, cmp_i2)
+
+cmp_i2$Yield <- cmp_i$Yield
+
+cmp_i <- cmp_i2
+
+i <- createDataPartition(cmp_i$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Results data frame
+dfr <- data.frame(matrix(nrow=6, ncol=3))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'Test.RMSE')
+
+```
+
+Basic CART model tuned using complexity parameter.
+
+```{r}
+# Basic CART model - tuned using complexity parameter
+cartModel <- train(data.train.x, data.train.y, method='rpart', tuneLength=10, trControl=ctrl)
+# cartModel
+
+cartPredict <- predict(cartModel, newdata = data.test.x)
+
+cart.results <- postResample(pred = cartPredict, obs = data.test.y)
+
+dfr[1,] = data.frame(
+    Model='Basic CART (tuned w/complexity parameter)', 
+    Tuning.Parameters=paste0('cp=', cartModel$bestTune[['cp']]), 
+    Test.RMSE=(cart.results[['RMSE']])
+)
+
+
+```
+
+Basic CART model tuned using node depth.
+
+```{r}
+
+# Basic CART model - tuned using complexity parameter
+
+cart2Model <- train(data.train.x, data.train.y, method='rpart2', tuneLength=10, trControl=ctrl)
+# cart2Model
+
+cart2Predict <- predict(cart2Model, newdata = data.test.x)
+
+cart2.results <- postResample(pred = cart2Predict, obs = data.test.y)
+
+dfr[2,] = data.frame(
+    Model='Basic CART (tuned w/node depth)', 
+    Tuning.Parameters=paste0('maxdepth=', cart2Model$bestTune[['maxdepth']]), 
+    Test.RMSE=(cart2.results[['RMSE']])
+)
+
+```
+
+Bagged CART.
+
+```{r}
+
+# Bagged CART
+bagModel <- train(data.train.x, data.train.y, method='treebag', trControl=ctrl)
+# bagModel
+
+bagPredict <- predict(bagModel, newdata = data.test.x)
+
+bag.results <- postResample(pred = bagPredict, obs = data.test.y)
+
+dfr[3,] = data.frame(
+    Model='Bagged CART', 
+    Tuning.Parameters='', 
+    Test.RMSE=(bag.results[['RMSE']])
+)
+
+```
+
+Random forest.
+
+```{r}
+
+# Random forest
+rfModel <- train(data.train.x, data.train.y, method='rf', tuneLength=10, trControl=ctrl)
+# rfModel
+
+rfPredict <- predict(rfModel, newdata = data.test.x)
+
+rf.results <- postResample(pred = rfPredict, obs = data.test.y)
+
+dfr[4,] = data.frame(
+    Model='Random forest', 
+    Tuning.Parameter=paste0('mtry=', rfModel$bestTune[['mtry']]), 
+    Test.RMSE=(rf.results[['RMSE']]))
+
+```
+
+Stochastic gradient boosting.
+
+```{r message=FALSE}
+
+# Had to set message=FALSE to prevent thousands of trace messages
+
+# Stochastic gradient boosting
+gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
+                       .n.trees=seq(100, 1000, by=50),
+                       .shrinkage=c(0.01, 0.1),
+                       .n.minobsinnode=10)
+gbmModel <- train(data.train.x, data.train.y, method='gbm', tuneGrid=gbmGrid, trControl=ctrl, verbose = FALSE)
+
+# gbmModel
+
+gbmPredict <- predict(gbmModel, newdata = data.test.x)
+
+gbm.results <- postResample(pred = gbmPredict, obs = data.test.y)
+
+dfr[5,] = data.frame(
+    Model='Stochastic gradient boosting', 
+    Tuning.Parameters=paste0('interaction.depth=', gbmModel$bestTune[['interaction.depth']], 
+                             ', n.trees=', gbmModel$bestTune[['n.trees']], 
+                             ', shrinkage=', gbmModel$bestTune[['shrinkage']],
+                             ', n.minobsinnode=10'),  
+    Test.RMSE=(gbm.results[['RMSE']]))
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+
+cubModel <- train(data.train.x, data.train.y, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+# cubModel
+
+cubPredict <- predict(cubModel, newdata = data.test.x)
+
+cub.results <- postResample(pred = cubPredict, obs = data.test.y)
+
+dfr[6,] = data.frame(
+    Model='Cubist', 
+    Tuning.Parameters=paste0('committees=', cubModel$bestTune[['committees']], 
+                             ', neighbors=', cubModel$bestTune[['neighbors']]),
+    Test.RMSE=(cub.results[['RMSE']]))
+
+```
+
 (a) Which tree-based regression model gives the optimal resampling and test
 set performance?
 
+```{r}
+dfr |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+
+```
+
+
+The cubist model had the best performance. 
+
 (b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
 
+```{r}
+plot(varImp(cubModel), top = 10, main = "Cubist Model")
+```
+
+In this model we see process comprises 7 of the top 10 most important variables, which is similar to what we observed in the linear and nonlinear models. Among the 10 most important variables, 6 are process, and 4 are biological for the nonlinear model. For the linear model, 8 were process, and 2 were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+
+
 (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+```{r, fig.height=10, fig.width=15}
+
+library(partykit)
+library(rpart)
+data.train <- cmp_i[i,]
+rpartTree <- rpart(Yield ~ ., data = data.train)
+rpartTree2 <- as.party(rpartTree)
+plot(rpartTree2)
+```
+
+We can observe the following:   
+
+- The root node for this tree is `ManufacturingProcess32`. We see the split occurs when the variable is < 0.225.  
+- Each child node represents a subset of the data at the denoted split criteria
+- The tree depth is the number of splits in the tree. A deeper tree with more splits indicates more complex decision rules and potentially more overfitting to the data. In this chart, we have three splits.   
+- The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.225, and we can observe where the exceptions to this occur. 
+- You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
 
 ### Recommender Problem
