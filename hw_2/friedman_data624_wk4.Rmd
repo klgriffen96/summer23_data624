@@ -346,9 +346,24 @@ Exercise 6.3 describes data for a chemical manufacturing process. Use the same d
 
 (a) Which nonlinear regression model gives the optimal resampling and test  set performance?
 
-(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+**Approach**
+```{r}
+```
 
+**Interpretation of Results**
+(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+**Approach**
+```{r}
+```
+
+**Interpretation of Results**
 (c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+**Approach**
+```{r}
+```
+
+**Interpretation of Results**
 
 ### 8.1
 
@@ -363,9 +378,11 @@ simulated <- as.data.frame(simulated)
 colnames(simulated)[ncol(simulated)] <- "y"
 ```
 
+(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores. Did the random forest model significantly use the uninformative predictors (V6 – V10)?
 
-(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores:
 
+**Approach**
+**Code**
 ```{r}
 library(randomForest)
 library(caret)
@@ -375,25 +392,60 @@ model1 <- randomForest(y ~ ., data = simulated,
 rfImp1 <- varImp(model1, scale = FALSE)
 
 ```
+**Interpretation of Results**
 
-Did the random forest model significantly use the uninformative predictors (V6 – V10)?
 
-(b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+
+(b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example, fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+
+**Approach**
+**Code**
 
 ```{r}
 simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
 cor(simulated$duplicate1, simulated$V1)
 ```
 
-Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+**Interpretation of Results**
+
+
+
 
 (c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
 (d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
 
 ### 8.2
 
 Use a simulation to show tree bias with different granularities.
+
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
 
 
 ### 8.3
@@ -402,9 +454,39 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 (a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
 
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
+
 (b) Which model do you think would be more predictive of other samples?
 
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
+
 (c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
 
 ### 8.7
 
@@ -412,10 +494,37 @@ Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. 
 
 (a) Which tree-based regression model gives the optimal resampling and test
 set performance?
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
 
 (b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
 
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
 (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+**Approach**
+**Code**
+
+```{r}
+
+```
+
+**Interpretation of Results**
+
 
 ### Recommender Problem
 
