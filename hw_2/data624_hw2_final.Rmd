@@ -992,7 +992,7 @@ As shown in the graph, the trees tend to split the variable importance among the
 Use a simulation to show tree bias with different granularities.
 
 ```{r}
-
+library(rpart)
 # Set seed
 set.seed(77)
 
@@ -1331,6 +1331,7 @@ Now we can shift to using the functionality of the `arules` package. We will rea
 ```{r,cache=TRUE}
 library(arules)
 library(arulesViz)
+library(flextable)
 basket_tr <- read.transactions(file = "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv",
  sep = ",", format = "basket", 
  rm.duplicates = FALSE,
@@ -1380,11 +1381,11 @@ support_all |>
   as("data.frame") |>
   arrange(desc(support)) |>
   head(5) |>
-  flextable() |>
-  width(width = 2) |>
-  fontsize(size = 10) |>
-  line_spacing(space = 1) |>
-  hline(part = "all")
+  flextable::flextable() |>
+  flextable::width(width = 2) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
 ```
 
 Interpreting these results, the support column indicates the proportion of transactions that contain each itemset: 7.5% of all transactions contain "other vegetables" and "whole milk", 5.7% of all transactions contain "other vegetables "rolls/buns" and "whole milk", and so on. 
@@ -1431,11 +1432,11 @@ rules |>
   as("data.frame") |>
   arrange(desc(confidence)) |>
   head(5) |>
-  flextable() |>
-  width(width = 2) |>
-  fontsize(size = 10) |>
-  line_spacing(space = 1) |>
-  hline(part = "all")
+  flextable::flextable() |>
+  flextable::width(width = 2) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
 ```
 
 We can interpret the confidence that 58% of customers that bought "citrus fruit" and "root vegetables" also bought "other vegetables", and so on. 
@@ -1449,11 +1450,11 @@ rules |>
   as("data.frame") |>
   arrange(desc(lift)) |>
   head(5) |>
-  flextable() |>
-  width(width = 2) |>
-  fontsize(size = 10) |>
-  line_spacing(space = 1) |>
-  hline(part = "all")
+  flextable::flextable() |>
+  flextable::width(width = 2) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
 ```
 
 Again, looking at the first line, we can interpret the lift of 3.03 to represent the occurrence of the antecedent is 3.03 times *likelier* when the antecedent items are present, and so on. 
