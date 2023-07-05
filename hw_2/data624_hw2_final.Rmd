@@ -828,6 +828,24 @@ rfImp1 <- varImp(model1, scale = FALSE)
 
 Did the random forest model significantly use the uninformative predictors (V6 – V10)?
 
+```{r}
+
+# Display importance values
+
+df_rfImp1 <- data.frame(Variable = rownames(rfImp1), Importance = rfImp1$Overall)
+
+df_rfImp1 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+As shown, the uninformative predictors (V6-V10) have a significantly lower relative importance in the model, which is consistent with our earlier findings.
+
 (b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
 
 ```{r}
@@ -837,13 +855,179 @@ cor(simulated$duplicate1, simulated$V1)
 
 Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
 
+```{r}
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+
+
+df_rfImp2 <- data.frame(Variable = rownames(rfImp2), Importance = rfImp2$Overall)
+
+df_rfImp2 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+The variable importance of V1 went down, and the importance of the duplicate1 variable approximately the same - so effectively the variable importance is split between the two correlated variables. 
+
+What happens when you add another predictor that is also highly correlated with V1?
+
+```{r}
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .2
+cor(simulated$duplicate2, simulated$V1)
+```
+
+```{r}
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE) |> arrange(desc(Overall))
+
+df_rfImp3 <- data.frame(Variable = rownames(rfImp3), Importance = rfImp3$Overall)
+
+df_rfImp3 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+As shown in the table, the relative importances of V1 and duplicate1 decreased with the introduction of variable duplicate2. The sum of these three importances are roughly on par with the importance of V1 in the first model and the sum of v1 + duplicate1 in the second model. This is consistent with the way regression trees are sensitive to highly correlated variables.
+
 (c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
+```{r}
+library(party)
+
+
+model_forest <- cforest(y ~ ., data = simulated)
+
+m_t <- varimp(model_forest, conditional = TRUE) 
+m_f <- varimp(model_forest, conditional = FALSE) 
+
+l_t <- cbind(m_t, m_f)
+
+df_t <- data.frame(Variable = rownames(l_t), 
+                   Conditional_True = l_t[,1],
+                   Conditional_Flase = l_t[,2])
+
+df_t |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+Using conditional inference, with the toggle being True, has the effect of lowering the importance of the two variables that are highly correlated with V1, however V1 is also reduced. Variable V1 itself remained third in the order of relative importance among other variables in both cases. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced for the toggle being True. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
+
+
 (d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+Boosted tree.
+
+```{r}
+# Init results table
+dfr <- data.frame(matrix(nrow=0, ncol=3))
+colnames(dfr) <- c('Model', 'Variable', 'Rank')
+
+# Boosted tree
+library(gbm)
+set.seed(77)
+fitgbm1 <- gbm(y ~ ., data=simulated, distribution='gaussian', n.trees=1000)
+tmpdf <- varImp(fitgbm1, numTrees=1000)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Boosted tree', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+library(Cubist)
+set.seed(77)
+fitcub1 <- cubist(x=simulated %>% dplyr::select(-y), y=simulated$y)
+tmpdf <- varImp(fitcub1, numTrees=1000)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Cubist', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Compare variable importance of the models.
+
+```{r warning=F}
+
+# Plot variable importance
+dfr %>%
+    filter(Variable %in% c('V1', 'duplicate1', 'duplicate2')) %>%
+    ggplot(aes(x=factor(Variable, level=c('V1', 'duplicate1', 'duplicate2')), y=11-Rank, group=Model, color=Model, shape=Model)) +
+    geom_point() +
+    geom_line() +
+    scale_y_discrete(name='Rank', limits=rev(factor(seq(1, 10)))) +
+    xlab('Variable') +
+    ggtitle('Comparison of variable importance of highly correlated variables')
+
+```
+
+As shown in the graph, the trees tend to split the variable importance among the three correlated predictors, although most downplayed the importance of the first duplicated variable. 
 
 ### 8.2
 
 Use a simulation to show tree bias with different granularities.
+
+```{r}
+
+# Set seed
+set.seed(77)
+
+# Generate three discrete variables
+s1 <- sample(x=seq(0, 9), size=1000, replace=T)
+s2 <- sample(x=seq(0, 99), size=1000, replace=T)
+s3 <- sample(x=seq(0, 999), size=1000, replace=T)
+
+# Generate three continuous variables
+s4 <- runif(n=1000, min=0, max=9)
+s5 <- runif(n=1000, min=0, max=99)
+s6 <- runif(n=1000, min=0, max=999)
+
+# Generate outcome variable
+y <- s1 + s2 + s3 + s4 + s5 + s6 + runif(n=1000, min=0, max=1)
+
+# Create data frame
+df82 <- data.frame(outcome=y, discrete1=s1, discrete2=s2, discrete3=s3, continuous1=s4, continuous2=s5, continuous3=s6)
+
+# Simple CART
+fitcart <- rpart(outcome ~ ., data=df82)
+
+df_fit <- varImp(fitcart)
+df_fit <- data.frame(Variable = rownames(df_fit), Importance = df_fit$Overall)
+df_fit %>%
+    arrange(desc(Importance)) %>%
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+As expected, the variables with many discrete values had variable importances that far outweighed the others.
 
 
 ### 8.3
