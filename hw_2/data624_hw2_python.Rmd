@@ -1,0 +1,387 @@
+---
+title: "Data 624: Predictive Analytics HW:2"
+author: "Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden"
+date: "2023-06-19"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T)
+library(tidyverse)
+library(kableExtra)
+library(DMwR2)
+library(gridExtra)
+library(AppliedPredictiveModeling)
+library(e1071)
+library(caret)
+
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## Introduction
+
+This homework assignment includes problems from:
+
+Kuhn & Johnson. "Applied Predictive Modeling"
+
+This accompanies readings from KJ Chapters 6, 7, and 8.
+
+Additionally readings on recommender systems along with a recommender system problem was assigned by the professor.
+
+**This file contains the comparison between R and python**
+
+## KJ 6.3
+
+**A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
+
+### (a) Start R and use these commands to load the data:
+
+    > library(AppliedPredictiveModeling)
+    > data(chemicalManufacturing)
+    
+**The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
+
+```{r}
+
+# Load data
+data(ChemicalManufacturingProcess)
+
+```
+
+### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+
+To get additional experience, we will try to do some work using python. The library `retriculate` helps with passing variables between r and python. The python anaconda distribution comes with a lot of preloaded libraries helpful for datascience.
+
+```{r}
+library(reticulate)
+use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
+```
+
+By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
+
+```{python}
+type(r.dfchem)
+r.dfchem.shape
+````
+
+So we know that python has interpreted the dataframe in r as a pytjon pandas dataframe. The dimensions are what we expected 176 observations of 58 variables.
+
+Now lets create a list of missing variables to understand where the NAs are.
+
+```{python}
+r.dfchem.isna().sum()
+```
+
+
+Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
+
+Now lets impute with python. We couldn't get the KNN imputer in python to work, so using the simple imputer with mean imputation instead.
+
+```{python}
+from sklearn.impute import SimpleImputer
+import pandas as pd
+
+imputer = SimpleImputer(strategy='mean')
+pdfimp = r.dfchem
+imputer = imputer.fit(pdfimp)
+pdfimp.iloc[:,:] = imputer.transform(r.dfchem)
+pdfimp.isna().sum()
+pdfimp.shape
+```
+
+### (c)
+
+**Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
+
+First we will do exploratory data analysis and do any pre-processing necessary.
+
+Check near zero variance in python.
+
+```{python}
+from sklearn.feature_selection import VarianceThreshold
+
+var_thr = VarianceThreshold(threshold = 0.02) #Removing both constant and quasi-constant
+var_thr.fit(pdfimp)
+
+concol = [column for column in pdfimp.columns 
+          if column not in pdfimp.columns[var_thr.get_support()]]
+
+for features in concol:
+    print(features)
+```
+
+According to python, there are more near zero variance variables, we will drop them.
+
+```{python}
+
+pdf0var = pdfimp.drop(concol,axis=1)
+```
+
+Next we can inspect the outliers.
+
+```{python}
+import numpy as np
+
+for i in range(1,pdf0var.shape[1]):
+  # IQR
+  # Calculate the upper and lower limits
+  Q1 = pdf0var.iloc[:, i].quantile(0.25)
+  Q3 = pdf0var.iloc[:, i].quantile(0.75)
+  IQR = Q3 - Q1
+  lower = Q1 - 1.5*IQR
+  upper = Q3 + 1.5*IQR
+   
+  # Create arrays of Boolean values indicating the outlier rows
+  upper_array = np.where(pdf0var.iloc[:, i]>=upper)[0]
+  lower_array = np.where(pdf0var.iloc[:, i]<=lower)[0]
+  
+  total = upper_array.shape[0] + lower_array.shape[0]
+  
+  print(pdf0var.columns[i], total)
+```
+
+You can see the function worked the same in python and in r.
+
+Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
+
+Next we can examine the skewness.
+
+```{python}
+
+from scipy.stats import skew
+
+all_skewed = []
+
+for i in range(1,pdf0var.shape[1]):
+  # Calculate the skewness
+  s = skew(pdf0var.iloc[:, i], axis=0, bias=True)
+  if (s > 2.0 or s < -2.0):
+    print(pdf0var.columns[i], s)
+    all_skewed.append(i)
+  
+```
+
+There is a small missmatch between python and rs skew calculation but overall they are similar.
+
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
+
+Lets try normalization first. Based on the fact that our data does contain outliers, a scaling mechanism robust to this may be needed (https://scikit-learn.org/stable/modules/preprocessing.html)
+
+```{python}
+from sklearn.preprocessing import RobustScaler
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.ticker import PercentFormatter
+
+pdfx = pdf0var.iloc[:,1:]
+
+robust_scaler = RobustScaler()
+pdfscaled = robust_scaler.fit_transform(pdfx.to_numpy())
+pdfscaled = pd.DataFrame(pdfscaled, columns=pdfx.columns)
+
+for i in range(1,pdf0var.shape[1]):
+  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
+  n_bins = 30
+  axs[0].hist(pdfx.iloc[:, i], bins=n_bins)
+  axs[1].hist(pdfscaled.iloc[:, i], bins=n_bins)
+  plt.show()
+  
+```
+
+Now that we know the scaling is correct, we can move onto the YeoJohnson transformation.
+
+```{python}
+from sklearn.preprocessing import PowerTransformer
+
+power_transfromer = PowerTransformer(method='yeo-johnson', standardize=False)
+pdfyeo = power_transfromer.fit_transform(pdfscaled.to_numpy())
+pdfyeo = pd.DataFrame(pdfyeo, columns=pdfscaled.columns)
+
+for i in range(1,pdf0var.shape[1]):
+  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
+  n_bins = 30
+  axs[0].hist(pdfscaled.iloc[:, i], bins=n_bins)
+  axs[1].hist(pdfyeo.iloc[:, i], bins=n_bins)
+  plt.show()
+
+```
+
+Now we take a look at a correlation matrix.
+
+```{python}
+
+plt.matshow(pdfyeo.corr())
+plt.show()
+```
+
+Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
+
+
+Now we will split the data into a training and a test set.
+
+### (d)
+
+**Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
+
+
+The RMSE value approximately the same in the test set as on the training set for both, but the RMSE was lower for the PLS than the elastic net on the test data.
+
+We can check out the residuals for the pls.
+
+
+The residuals appear to be random and centered around mean zero. The model appears to fit well.  
+
+### (e)
+
+**Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
+
+To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables for the pls tuned model, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
+
+
+
+### (f)
+
+**Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
+
+
+We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
+
+
+### 7.2
+
+Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+
+y = 10 sin(πx1x2) + 20(x3 − 0.5)2 + 10x4 + 5x5 + N(0, σ2)
+
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package mlbench contains a function called mlbench.friedman1 that simulates these data:
+
+```{r}
+library(mlbench)
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x <- data.frame(trainingData$x)
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+
+```
+
+Tune several models on these data. For example:
+
+```{r}
+library(caret)
+knnModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "knn",
+                    preProc = c("center", "scale"),
+                    tuneLength = 10)
+knnModel
+
+knnPred <- predict(knnModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+postResample(pred = knnPred, obs = testData$y)
+
+```
+
+Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+
+### 7.5
+
+Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+(a) Which nonlinear regression model gives the optimal resampling and test  set performance?
+
+(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+(c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+### 8.1
+
+Recreate the simulated data from Exercise 7.2
+
+```{r}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+
+(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores:
+
+```{r}
+library(randomForest)
+library(caret)
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+
+```
+
+Did the random forest model significantly use the uninformative predictors (V6 – V10)?
+
+(b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+
+```{r}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+
+Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+
+(c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+(d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+### 8.2
+
+Use a simulation to show tree bias with different granularities.
+
+
+### 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+(a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+(b) Which model do you think would be more predictive of other samples?
+
+(c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+### 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+(a) Which tree-based regression model gives the optimal resampling and test
+set performance?
+
+(b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+(c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+### Recommender Problem
