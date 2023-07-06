@@ -270,14 +270,14 @@ plsTune <- train(data.train.x, data.train.y$Yield,
                  tuneLength = 20,
                  trControl = ctrl)
 
-plsTune
+# plsTune
 
 # elastic net regression
 # enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
 enetTune <- train(data.train.x, data.train.y$Yield, 
                   method='enet',  
                   trControl=ctrl)
-enetTune
+# enetTune
 ```
 
 ```{r}
@@ -342,7 +342,7 @@ The residuals appear to be random and centered around mean zero. The model appea
 
 To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables for the pls tuned model, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
 
-```{r}
+```{r, warning = FALSE}
 
 var.imp <- varImp(plsTune)
 plot(var.imp, top = 20)
@@ -417,7 +417,7 @@ knnModel <- train(x = trainingData$x,
                     method = "knn",
                     preProc = c("center", "scale"),
                     tuneLength = 10)
-knnModel
+# knnModel
 
 knnPred <- predict(knnModel, newdata = testData$x)
 ## The function 'postResample' can be used to get the test set
@@ -482,7 +482,7 @@ nnetModel <- train(trainingData$x, trainingData$y,
 stopCluster(cl)
 registerDoSEQ()
 
-nnetModel
+# nnetModel
 
 ```
 
@@ -511,7 +511,7 @@ marsModel <- train(trainingData$x, trainingData$y,
                    tuneGrid = marsGrid,
                    trControl = ctrl)
 
-marsModel
+# marsModel
 ```
 
 ```{r, cache = TRUE}
@@ -536,7 +536,7 @@ svmModel <- train(trainingData$x, trainingData$y,
                   tuneLength = 14,
                   trControl = ctrl)
 
-svmModel
+# svmModel
 ```
 
 ```{r, cache = TRUE}
@@ -622,7 +622,7 @@ knnModel <- train(x = data.train.x,
                     y = data.train.y, 
                     method = "knn",
                     tuneLength = 10)
-knnModel
+# knnModel
 
 knnPred <- predict(knnModel, newdata = data.test.x)
 ## The function 'postResample' can be used to get the test set
@@ -679,7 +679,7 @@ nnetModel <- train(x = trainXnnet,
 stopCluster(cl)
 registerDoSEQ()
 
-nnetModel
+# nnetModel
 
 nnetPredict <- predict(nnetModel, newdata = testXnnet)
 ## The function 'postResample' can be used to get the test set
@@ -709,7 +709,7 @@ MARSModel <- train(x = data.train.x,
                     trControl = trainControl(method = "cv"))
 
 
-MARSModel
+# MARSModel
 
 MARSPred <- predict(MARSModel, newdata = data.test.x)
 ## The function 'postResample' can be used to get the test set
@@ -733,7 +733,7 @@ svmModel <- train(x = data.train.x,
                     method = "svmRadial",
                   tuneLength = 14,
                   trControl = trainControl(method = "cv"))
-svmModel
+# svmModel
 
 svmPred <- predict(svmModel, newdata = data.test.x)
 ## The function 'postResample' can be used to get the test set
@@ -903,7 +903,7 @@ As shown in the table, the relative importances of V1 and duplicate1 decreased w
 
 (c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
-```{r}
+```{r, warning=FALSE}
 library(party)
 
 
@@ -1249,7 +1249,7 @@ In this model we see process comprises 7 of the top 10 most important variables,
 
 (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
 
-```{r, fig.height=10, fig.width=15}
+```{r, fig.height=10, fig.width=15, warning=FALSE}
 
 library(partykit)
 library(rpart)
@@ -1433,7 +1433,7 @@ rules |>
   arrange(desc(confidence)) |>
   head(5) |>
   flextable::flextable() |>
-  flextable::width(width = 2) |>
+  flextable::width(width = 1) |>
   flextable::fontsize(size = 10) |>
   flextable::line_spacing(space = 1) |>
   flextable::hline(part = "all")
@@ -1451,7 +1451,7 @@ rules |>
   arrange(desc(lift)) |>
   head(5) |>
   flextable::flextable() |>
-  flextable::width(width = 2) |>
+  flextable::width(width = 1) |>
   flextable::fontsize(size = 10) |>
   flextable::line_spacing(space = 1) |>
   flextable::hline(part = "all")
