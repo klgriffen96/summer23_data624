@@ -1,17 +1,19 @@
 ---
-title: "Data 624: Predictive Analytics HW:2"
-author: "Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden"
+title: 'Data 624: Predictive Analytics HW:2'
+author: 'Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden'
 date: "2023-06-19"
 output:
+  word_document:
+    toc: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
   html_document:
     theme: yeti
     highlight: tango
     toc: yes
     toc_float: yes
-  pdf_document:
-    dev: cairo_pdf
-    toc: yes
-always_allow_html: true
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -67,22 +69,40 @@ To get additional experience, we will try to do some work using python. The libr
 
 ```{r}
 library(reticulate)
-use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
+# use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
+use_python("C:/Users/kayle/anaconda3/python.exe")
+
+```
+
+```{python}
+from sklearn.impute import SimpleImputer
+import pandas as pd
+from sklearn.feature_selection import VarianceThreshold
+import numpy as np
+from scipy.stats import skew
+from sklearn.preprocessing import RobustScaler
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.ticker import PercentFormatter
+from sklearn.preprocessing import PowerTransformer
+
+
+
 ```
 
 By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
 
 ```{python}
-type(r.dfchem)
-r.dfchem.shape
-````
+type(r.ChemicalManufacturingProcess)
+r.ChemicalManufacturingProcess.shape
+```
 
 So we know that python has interpreted the dataframe in r as a pytjon pandas dataframe. The dimensions are what we expected 176 observations of 58 variables.
 
 Now lets create a list of missing variables to understand where the NAs are.
 
 ```{python}
-r.dfchem.isna().sum()
+r.ChemicalManufacturingProcess.isna().sum()
 ```
 
 
@@ -91,13 +111,18 @@ Overall, the missing data does not appear to be structurally missing, there does
 Now lets impute with python. We couldn't get the KNN imputer in python to work, so using the simple imputer with mean imputation instead.
 
 ```{python}
-from sklearn.impute import SimpleImputer
-import pandas as pd
 
+# define the imputer
 imputer = SimpleImputer(strategy='mean')
-pdfimp = r.dfchem
+
+# define the pandas dataframe to be imputed
+pdfimp = r.ChemicalManufacturingProcess
+
+# perform imputation
 imputer = imputer.fit(pdfimp)
-pdfimp.iloc[:,:] = imputer.transform(r.dfchem)
+pdfimp.iloc[:,:] = imputer.transform(r.ChemicalManufacturingProcess)
+
+# check nas and shape
 pdfimp.isna().sum()
 pdfimp.shape
 ```
@@ -111,7 +136,6 @@ First we will do exploratory data analysis and do any pre-processing necessary.
 Check near zero variance in python.
 
 ```{python}
-from sklearn.feature_selection import VarianceThreshold
 
 var_thr = VarianceThreshold(threshold = 0.02) #Removing both constant and quasi-constant
 var_thr.fit(pdfimp)
@@ -133,7 +157,6 @@ pdf0var = pdfimp.drop(concol,axis=1)
 Next we can inspect the outliers.
 
 ```{python}
-import numpy as np
 
 for i in range(1,pdf0var.shape[1]):
   # IQR
@@ -145,8 +168,8 @@ for i in range(1,pdf0var.shape[1]):
   upper = Q3 + 1.5*IQR
    
   # Create arrays of Boolean values indicating the outlier rows
-  upper_array = np.where(pdf0var.iloc[:, i]>=upper)[0]
-  lower_array = np.where(pdf0var.iloc[:, i]<=lower)[0]
+  upper_array = np.where(pdf0var.iloc[:, i]>upper)[0]
+  lower_array = np.where(pdf0var.iloc[:, i]<lower)[0]
   
   total = upper_array.shape[0] + lower_array.shape[0]
   
@@ -161,8 +184,6 @@ Next we can examine the skewness.
 
 ```{python}
 
-from scipy.stats import skew
-
 all_skewed = []
 
 for i in range(1,pdf0var.shape[1]):
@@ -172,6 +193,8 @@ for i in range(1,pdf0var.shape[1]):
     print(pdf0var.columns[i], s)
     all_skewed.append(i)
   
+pdfx = pdf0var.iloc[:,1:]
+
 ```
 
 There is a small missmatch between python and rs skew calculation but overall they are similar.
@@ -181,41 +204,36 @@ Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount o
 Lets try normalization first. Based on the fact that our data does contain outliers, a scaling mechanism robust to this may be needed (https://scikit-learn.org/stable/modules/preprocessing.html)
 
 ```{python}
-from sklearn.preprocessing import RobustScaler
-import matplotlib.pyplot as plt
-from matplotlib import colors
-from matplotlib.ticker import PercentFormatter
-
-pdfx = pdf0var.iloc[:,1:]
 
 robust_scaler = RobustScaler()
 pdfscaled = robust_scaler.fit_transform(pdfx.to_numpy())
 pdfscaled = pd.DataFrame(pdfscaled, columns=pdfx.columns)
 
-for i in range(1,pdf0var.shape[1]):
-  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
-  n_bins = 30
-  axs[0].hist(pdfx.iloc[:, i], bins=n_bins)
-  axs[1].hist(pdfscaled.iloc[:, i], bins=n_bins)
-  plt.show()
+
+# can run this to see the plots
+# for i in range(1,pdfx.shape[1]):
+#   fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
+#   n_bins = 30
+#   axs[0].hist(pdfx.iloc[:, i], bins=n_bins)
+#   axs[1].hist(pdfscaled.iloc[:, i], bins=n_bins)
+#   plt.show()
   
 ```
 
 Now that we know the scaling is correct, we can move onto the YeoJohnson transformation.
 
 ```{python}
-from sklearn.preprocessing import PowerTransformer
 
 power_transfromer = PowerTransformer(method='yeo-johnson', standardize=False)
 pdfyeo = power_transfromer.fit_transform(pdfscaled.to_numpy())
 pdfyeo = pd.DataFrame(pdfyeo, columns=pdfscaled.columns)
 
-for i in range(1,pdf0var.shape[1]):
-  fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
-  n_bins = 30
-  axs[0].hist(pdfscaled.iloc[:, i], bins=n_bins)
-  axs[1].hist(pdfyeo.iloc[:, i], bins=n_bins)
-  plt.show()
+# for i in range(1,pdfscaled.shape[1]):
+#   fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
+#   n_bins = 30
+#   axs[0].hist(pdfscaled.iloc[:, i], bins=n_bins)
+#   axs[1].hist(pdfyeo.iloc[:, i], bins=n_bins)
+#   plt.show()
 
 ```
 
