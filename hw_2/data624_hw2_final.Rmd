@@ -101,7 +101,7 @@ First we will do exploratory data analysis and do any pre-processing necessary.
 We can check the distribution of the predictors and see what have near-zero variance and remove these from the predictor set. 
 
 ```{r}
-dfimp.x <- dfimp |> select(-Yield)
+dfimp.x <- dfimp |> dplyr::select(-Yield)
 nzv <- nearZeroVar(dfimp.x)
 paste0("Inds near zero variance to be removed: ", colnames(dfimp.x[nzv]))
 dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(dfimp.x[nzv]))
@@ -261,8 +261,8 @@ grid.arrange(plot1, plot2, ncol = 2)
 ```{r}
 ctrl <- trainControl(method = "cv", number = 10)
 
-data.train.x <- dftrain |> select(-Yield)
-data.train.y <- dftrain |> select(Yield)
+data.train.x <- dftrain |> dplyr::select(-Yield)
+data.train.y <- dftrain |> dplyr::select(Yield)
 
 # tune and fit the model with pre processing 
 plsTune <- train(data.train.x, data.train.y$Yield,
@@ -315,8 +315,8 @@ plot(enetTune)
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
 ```{r}
-data.test.x <- dftest |> select(-Yield)
-data.test.y <- dftest |> select(Yield)
+data.test.x <- dftest |> dplyr::select(-Yield)
+data.test.y <- dftest |> dplyr::select(Yield)
 
 preds <- predict(plsTune, data.test.x)
 postResample(preds, data.test.y$Yield)
@@ -364,7 +364,7 @@ m.imp <- var.imp$importance |>
 
 # correlation matrix of 10 most important variables and response variable
 dfimp |>
-  select(all_of(c("Yield",m.imp))) |>
+  dplyr::select(all_of(c("Yield",m.imp))) |>
   cor() |>
   round(2) |>
   corrplot::corrplot(method = "square",
@@ -373,7 +373,7 @@ dfimp |>
             type = "lower")
 ```
 
-This correlation matrix helps make clear processes that can be increased or decreased to improve yield. We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
+This correlation matrix helps make clear processes that can be increased or decreased to improve yield. We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. Because PLS was the best-performing model, it isn't possible to quantify the increase in yield that could be realized if certain processes were increased or decreased. This is due to the fact that PLS mathematically transforms the actual features into new, latent predictors to remove collinearity among variables while selecting the features that have the greatest contribution to variance. While it isn't possible to directly quantify cost savings, we can say that the greatest savings will be realized by adjusting those with the most relative importance (i.e. manufacturing process #32, 13, 09, 36, etc.).
 
 
 ### 7.2
