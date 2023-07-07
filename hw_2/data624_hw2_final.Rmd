@@ -378,7 +378,7 @@ This correlation matrix helps make clear processes that can be increased or decr
 
 ### 7.2
 
-Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+Friedman (1991) introduced several benchmark data sets created by simulation. One of these simulations used the following nonlinear equation to create data:
 
 y = 10 sin(πx1x2) + 20(x3 − 0.5)2 + 10x4 + 5x5 + N(0, σ2)
 
@@ -491,7 +491,7 @@ nnetPred <- predict(nnetModel, newdata = testData$x)
 nnet.results <- postResample(pred = nnetPred, obs = testData$y)
 
 df_results[2,] = data.frame(
-    Model='Neaural Net', 
+    Model='Neural Net', 
     Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
     RMSE=min(nnet.results[['RMSE']])
 )
@@ -687,7 +687,7 @@ nnetPredict <- predict(nnetModel, newdata = testXnnet)
 nnet.results <- postResample(pred = nnetPredict, obs = data.test.y)
 
 df_results[2,] = data.frame(
-    Model='Neaural Net', 
+    Model='Neural Net', 
     Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
     RMSE=min(nnet.results[['RMSE']])
 )
@@ -769,7 +769,7 @@ var.imp <- varImp(svmModel)
 plot(var.imp, top = 10)
 ```
 
-Among the 10 most important variables, 6 are process, and 4 are biological. For the linear model, 8 were process, and 2 were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+Among the ten most important variables, six are process and four are biological. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
 
 (c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
 
@@ -798,7 +798,7 @@ featurePlot(df[,m.imp], cmp_i$Yield,
             type = c("p","smooth"))
 ```
 
-These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot correspond to the correlations in the matrix plot.
+These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot, corresponding to the correlations in the matrix plot.
 
 ### 8.1
 
@@ -873,7 +873,7 @@ df_rfImp2 %>%
     hline(part = "all")
 ```
 
-The variable importance of V1 went down, and the importance of the duplicate1 variable approximately the same - so effectively the variable importance is split between the two correlated variables. 
+The variable importance of V1 went down, and the importance of the duplicate1 variable was approximately the same - so effectively the variable importance is split between the two correlated variables. 
 
 What happens when you add another predictor that is also highly correlated with V1?
 
@@ -916,7 +916,7 @@ l_t <- cbind(m_t, m_f)
 
 df_t <- data.frame(Variable = rownames(l_t), 
                    Conditional_True = l_t[,1],
-                   Conditional_Flase = l_t[,2])
+                   Conditional_False = l_t[,2])
 
 df_t |> flextable() |>
     width(width = 2) |>
@@ -925,7 +925,7 @@ df_t |> flextable() |>
     hline(part = "all")
 ```
 
-Using conditional inference, with the toggle being True, has the effect of lowering the importance of the two variables that are highly correlated with V1, however V1 is also reduced. Variable V1 itself remained third in the order of relative importance among other variables in both cases. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced for the toggle being True. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
+Using conditional inference, with the toggle being True, has the effect of lowering the importance of the two variables that are highly correlated with V1; however V1 is also reduced. Variable V1 itself remained third in the order of relative importance among other variables in both cases. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced for the toggle being True. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
 
 
 (d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
@@ -1036,7 +1036,7 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 (a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
 
-*The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration, subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, .9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
+*The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration; subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, 0.9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
 
 *Boosting can be susceptible to over-fitting, as boosting will select an optimal weak learner at each iteration. To offset this, regularization or shrinkage is applied as a learning rate which represents the fraction of a current prediction to be added to the previous iteration's predictions. As the learning rate increases, a larger fraction of predictions is added to the model - but this is not a good thing. A learning rate of 1 indicates no shrinkage, high error, focusing on fewer variables, the model is fast and greedy. If the learning rate is set to a low value, there is less of a penalty against larger coefficients; therefore, less influential predictors will remain small relative to more influential predictors. On the other hand, if the learning rate is high, the penalty against larger coefficients will be greater, resulting in reduced influence for these predictors. The idea behind increasing the learning rate is to try reducing overfitting. This results in fewer variables with greater importance--i.e., a more parsimonious model. The model on the left, with a lower learning rate, could be overfit, as there are more variables with greater importance (KJ pp. 206-207).*
 
@@ -1044,11 +1044,11 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 (b) Which model do you think would be more predictive of other samples?
 
-*A lower learning rate indicates slower learning and less errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so I believe the model on the left would be more predictive.* 
+*A lower learning rate indicates slower learning and fewer errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so we believe the model on the left would be more predictive.* 
 
 (c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
 
-*According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors." pg 205. Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. I would think that a smaller tree depth would lead to a more rapidly decreasing to 0 variable importance and a greater tree depth would have a more gradual decrease to 0. *
+*According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors" (KJ p.205). Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. We would think that a smaller tree depth would lead to a variable importance that more rapidly decreases to 0, while a greater tree depth would have a more gradual decrease to 0.*
 
 ### 8.7
 
@@ -1244,7 +1244,7 @@ The cubist model had the best performance.
 plot(varImp(cubModel), top = 10, main = "Cubist Model")
 ```
 
-In this model we see process comprises 7 of the top 10 most important variables, which is similar to what we observed in the linear and nonlinear models. Among the 10 most important variables, 6 are process, and 4 are biological for the nonlinear model. For the linear model, 8 were process, and 2 were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+In this model we see process variables comprise seven of the top ten most important variables, which is similar to what we observed in the linear and nonlinear models. Among the ten most important variables, six are process and four are biological for the nonlinear model. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
 
 
 (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
@@ -1261,10 +1261,10 @@ plot(rpartTree2)
 
 We can observe the following:   
 
-- The root node for this tree is `ManufacturingProcess32`. We see the split occurs when the variable is < 0.225.  
-- Each child node represents a subset of the data at the denoted split criteria
-- The tree depth is the number of splits in the tree. A deeper tree with more splits indicates more complex decision rules and potentially more overfitting to the data. In this chart, we have three splits.   
-- The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.225, and we can observe where the exceptions to this occur. 
+- The root node for this tree is `ManufacturingProcess32`. We see the split occurs when the variable is < 0.225.
+- Each child node represents a subset of the data at the denoted split criteria.
+- The tree depth is the number of splits in the tree. A deeper tree with more splits indicates more complex decision rules and potentially more overfitting to the data. In this chart, we have three splits.
+- The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.225, and we can observe where the exceptions to this occur.
 - You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
 
 ### Recommender Problem
@@ -1292,7 +1292,7 @@ baskets <- data |>
   pivot_longer(cols = starts_with("V"), 
                values_to = "item", 
                values_drop_na = TRUE) |>
-  select(tid, item)
+  dplyr::select(tid, item)
 ```
 
 We can visualize the frequency of items in our baskets,
@@ -1431,7 +1431,7 @@ Each itemset consists of antecedents and consequents. **Antecedents** are the it
 rules |>
   as("data.frame") |>
   arrange(desc(confidence)) |>
-  head(5) |>
+  head(10) |>
   flextable::flextable() |>
   flextable::width(width = 1) |>
   flextable::fontsize(size = 10) |>
@@ -1449,7 +1449,7 @@ Lift measures the strength of association between the antecedent and consequent 
 rules |>
   as("data.frame") |>
   arrange(desc(lift)) |>
-  head(5) |>
+  head(10) |>
   flextable::flextable() |>
   flextable::width(width = 1) |>
   flextable::fontsize(size = 10) |>
