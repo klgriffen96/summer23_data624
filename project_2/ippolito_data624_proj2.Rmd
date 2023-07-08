@@ -281,7 +281,7 @@ To gain a better understanding of which variables are skewed and to what degree 
 
 The sign of the skewness value indicates in which direction the distribution is skewed: Left-skewed distributions will exhibit negative skewness values, while the sign of right-skewed distributions will be positive.
 
-The following table quantitatively enumerates the skewness of each variable, ordered by the absolute value of skewness. 
+The following plot quantitatively enumerates the skewness of each variable, ordered by how heavily skewed the variable is.
 
 ```{r}
 
@@ -301,15 +301,16 @@ calcSkewness <- function(x, type) {
 colskewness <- data.frame(apply(dfm[,1:(ncol(dfm)-1)], 2, calcSkewness, type=1))
 colskewness$Variable <- row.names(colskewness)
 colnames(colskewness) <- c('Skewness', 'Variable')
+
+# Graph skewness values
 colskewness %>%
     dplyr::select(Variable, Skewness) %>%
     arrange(desc(abs(Skewness))) %>%
-    flextable() %>%
-    width(width = 2) %>%
-    fontsize(size = 10) %>%
-    line_spacing(space = 1) %>%
-    hline(part = "all") %>%
-    set_caption('Variable skewness')
+    ggplot(aes(x=reorder(Variable, desc(Skewness)), y=Skewness)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    ggtitle('Variable skewness') +
+    xlab('')
 
 ```
 
@@ -326,17 +327,39 @@ This reinforces the idea that some type of transformation will be needed if a mo
 
 #### Outliers
 
-Like collinearity and skewness, the presence of outliers in a data set can also negatively impact some models. Outliers are typically defined as those points which lie beyond a certain number of standard deviations from the mean--typically 2, 2.5, or 3 times the standard deviation). We'll examine our data set for outliers.
+Like collinearity and skewness, the presence of outliers in a data set can also negatively impact some models. Outliers are typically defined as those points which lie beyond a certain number of standard deviations from the mean--typically 2, 2.5, or 3 times the standard deviation). We'll examine our data set for outlying values that fall under this definition.
 
 ```{r}
 
+# Create function to count the number of outliers outside of (mult) standard deviations from the mean
+countOutliers <- function(x, mult) {
+    vals <- x[!is.na(x)]
+    mean_val <- mean(vals)
+    loval <- mean_val - (sd(vals) * mult)
+    hival <- mean_val + (sd(vals) * mult)
+    num_outliers <- length(vals[vals < loval | vals > hival])
+}
+
+# Set multiplier; outliers are considered as such when they lie outside of (multiplier) standard deviations from the mean
 mult <- 3
-vals <- dfm[, 1]
-mean_val <- mean(vals[!is.na(vals)])
-mean_val + (sd(vals, na.rm=T) * mult)
+
+# Generate bar graph of outlier counts
+dfout %>%
+    dplyr::select(Variable, Outlier.count) %>%
+    arrange(desc(Outlier.count)) %>%
+    filter(Outlier.count > 0) %>%
+    ggplot(aes(x=reorder(Variable, Outlier.count), y=Outlier.count, label=Outlier.count)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    geom_text(check_overlap=T, hjust=-0.1, nudge_x=0.05) +
+    ggtitle('Outliers (only variables with outliers shown)') +
+    xlab('') + ylab('Outlier count')
 
 ```
 
+The graph above illustrates that Filler.Speed has the most number of outliers (142, or 5.5% of the data). If models that are sensitive to outliers are used (e.g. linear regression models), the outliers must be handled in some fashion, either by removal or by performing an appropriate transformation.
+
+To better understand the outliers
 
 ```{r}
 
