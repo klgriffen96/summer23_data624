@@ -25,6 +25,7 @@ library(corrplot)
 library(mice)
 library(e1071)
 library(gridExtra)
+library(flextable)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -139,7 +140,8 @@ In addition to collinearity, which evaluates relationships between pairs of pred
 #     VIF > 5:       high multicollinearity
 library(car)
 lmod <- lm(PH ~ ., data=dfm)
-dfvif <- data.frame(vif(lmod)) %>%
+dfvif <- data.frame(vif(lmod))
+dfvif <- dfvif %>%
     mutate(Predictor=row.names(dfvif)) %>%
     rename(VIF=GVIF) %>%
     dplyr::select(Predictor, VIF) %>%
