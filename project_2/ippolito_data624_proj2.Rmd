@@ -398,8 +398,7 @@ graphOutliers <- function(x, mult) {
         ggplot(aes(x=!!sym(x), y=PH, color=outlier)) +
         geom_point() +
         scale_colour_manual(values=c('#e0e0e0', '#c02222')) +
-        theme(legend.position='none') +
-        ggtitle(paste0('Outliers - ', x))
+        theme(legend.position='none')
     return(plt)
 
 }
@@ -415,6 +414,7 @@ do.call("grid.arrange", c(plts, ncol=3))
 
 ```
 
+Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are highly suspect (e.g. Alch.Rel), but without having been given a description of the data set or knowing how the data was collected, one could only hazard a guess as to which are valid and which are true outliers.
 
 ```{r}
 
