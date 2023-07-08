@@ -264,7 +264,7 @@ To visually examine skewness, we'll generate histograms of the continuous variab
 
 ```{r fig.width=12, fig.height=10, warning=F}
 
-# Generate historgrams of continuous variables
+# Generate histograms of continuous variables
 dfm %>%
     dplyr::select(c(1:(ncol(dfm)-1))) %>%
     gather() %>%
@@ -273,16 +273,15 @@ dfm %>%
     facet_wrap(~key, scales = 'free_x') +
     ggtitle('Histograms of continuous variables')
 
-
 ```
 
-Some variables exhibit obviously skewed distributions (e.g. Filler.Speed, PSC, and Usage.cont), while others appear to be normally distributed (i.e., approximately symmetric), for example PH and PSC.Fill.
+Some variables exhibit obviously skewed distributions (e.g. Filler.Speed, PSC, and Usage.cont), while others appear to be normally distributed (i.e., approximately symmetric), for example PH and PSC.Fill. Others like Bailing and Bailin.Lvl appear to be bimodel.
 
 To gain a better understanding of which variables are skewed and to what degree they are skewed, we can calculate skewness quantitatively using the e1071 package (Joanes and Gill, 1998). Skewness with absolute values that are greater than 1 are considered highly skewed, while those between 0.5 and 1 are moderately skewed. Absolute values less than 0.5 can be considered approximately symmetric.
 
 The sign of the skewness value indicates in which direction the distribution is skewed: Left-skewed distributions will exhibit negative skewness values, while the sign of right-skewed distributions will be positive.
 
-The following table quantitatively enumerates the skewness of each variable.
+The following table quantitatively enumerates the skewness of each variable, ordered by the absolute value of skewness. 
 
 ```{r}
 
@@ -295,11 +294,7 @@ The following table quantitatively enumerates the skewness of each variable.
 
 # Create function to calculate skewness (needed because it handles columns with missing values inconsistently)
 calcSkewness <- function(x, type) {
-    new_x <- x
-    if (sum(is.na(x)) > 0) {
-        new_x <- !is.na(new_x)
-    }
-    return(e1071::skewness(new_x, type=type))
+    return(e1071::skewness(x[!is.na(x)], type=type))
 }
 
 # Calculate skewness on columns
@@ -318,15 +313,27 @@ colskewness %>%
 
 ```
 
-As seen in the table, every single variable is heavily skewed with the exception of Pressure.Vacuum. And excpet for Air.Pressure, all of the skewed variables are skewed to the left (Air.Pressure is right-skewed). This reinforces the idea that some type of transformation will be needed if a model is used that is sensitive to skewness (e.g. linear regression-based models). Alternatively, models that aren't sensitive to skewness can be employed instead (for example tree-based models).
+As seen in the table, six variables are heavily skewed, with the first two being skewed left and the remaining skewed right:
+
+- MFR
+- Filler.Speed
+- Oxygen.Filler
+- Temperature
+- Air.Pressurer
+- PSC.CO2
+
+This reinforces the idea that some type of transformation will be needed if a model is used that is sensitive to skewness (e.g. linear regression-based models). Alternatively, models that aren't sensitive to skewness can be employed instead (for example tree-based models).
 
 #### Outliers
 
-
+Like collinearity and skewness, the presence of outliers in a data set can also negatively impact some models. Outliers are typically defined as those points which lie beyond a certain number of standard deviations from the mean--typically 2, 2.5, or 3 times the standard deviation). We'll examine our data set for outliers.
 
 ```{r}
 
-
+mult <- 3
+vals <- dfm[, 1]
+mean_val <- mean(vals[!is.na(vals)])
+mean_val + (sd(vals, na.rm=T) * mult)
 
 ```
 
