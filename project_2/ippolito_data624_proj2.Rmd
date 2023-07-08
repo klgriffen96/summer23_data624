@@ -68,6 +68,15 @@ We note several things from a cursory first glance:
 1) There are a number of missing values but not at a rate that would be debilitating to fitting a model to the data. Additional investigation will be done to determine how best to handle these data points.
 1) Little information was given about the data, so we can't infer units for the variables (for example, it is unknown whether the temperature and pressure variables are in English or metric units).
 
+We'll need to do a small amount of data wrangling first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later).
+
+```{r}
+
+# Factor categorical variable Brand.Code
+dfm$Brand.Code <- factor(dfm$Brand.Code)
+
+```
+
 #### Feature plots
 
 Next, we'll generate feature plots of the continuous variables and a boxplot of the single categorical variable (Brand.Code). These plot show the relationship of each continuous variable against the outcome (pH) and can be used to detect how individual predictors influence the outcome.
@@ -149,7 +158,7 @@ As shown in the table almost half (15) of the variables have a VIF greater than 
 
 #### Near-zero-variance predictors
 
-We'll look for variables having near-zero variance (NZV) since some models are sensitive to this. A variable exhibiting NZV is by definition categorical, and is further characterized by one with only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
+We'll look for variables having near-zero variance (NZV) since some models are sensitive to this phenomenon. A variable exhibiting NZV is typically categorical and is further characterized by one with only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
 
 To calculate NZV, we'll use the NearZeroVar() function from the caret package. This calculates the ratio of the frequency of the most common value in each variable to that of the next most common value. If the ratio is high, this indicates NZV conditions, and the variable may need special handling if a model that is sensitive to NZV variables are being used.
 
@@ -171,7 +180,40 @@ nzv %>% dplyr::select(Variable, everything()) %>%
 
 ```
 
-As shown, only a single variable (Hyd.Pressure1) exhibited a high enough frequency ratio to be classified as an NZV variable. 
+As shown, only a single variable (Hyd.Pressure1) exhibited a high enough frequency ratio to be classified as an NZV variable. We'll examine this variable more.
+
+```{r}
+
+# Generate table of top unique values of Hyd.Pressure1
+hpfreq <- dfm %>%
+    group_by(Hyd.Pressure1) %>%
+    summarize(Unique.count=n()) %>%
+    arrange(desc(Unique.count))
+
+# Tally up values other than the top 2
+others <- hpfreq %>%
+    filter(Unique.count < hpfreq[[2,'Unique.count']]) %>%
+    summarize(Unique.count=sum(Unique.count))
+
+# Add the "other values" row to the table
+hpfreq <- hpfreq %>%
+    head(2) %>%
+    rbind(data.frame(Hyd.Pressure1='other values', Unique.count=as.numeric(others))) %>%
+    rename(Value=Hyd.Pressure1) %>%
+    mutate(Percent=round(100 * Unique.count / nrow(dfm), 2))
+
+# Display the table
+hpfreq %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Hyd.Pressure1')
+
+```
+
+As indicated in the table above, a large proportion of the observations have zero values (32.7%). Without knowing anything about how the data was collected or what the variable indicates, it is difficult to know the best way to handle this variable. The best we can do is make an assumption that zero values are structurally sound, correctly entered, and have meaning in the context of the variable. Based on these assumptions, this variable is a candidate to be dropped if a linear regression-based model is used.
 
 #### Missing values
 
