@@ -398,6 +398,7 @@ graphOutliers <- function(x, mult) {
         ggplot(aes(x=!!sym(x), y=PH, color=outlier)) +
         geom_point() +
         scale_colour_manual(values=c('#e0e0e0', '#c02222')) +
+        theme(legend.position='none') +
         ggtitle(paste0('Outliers - ', x))
     return(plt)
 
