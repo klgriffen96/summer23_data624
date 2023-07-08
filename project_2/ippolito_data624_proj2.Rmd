@@ -24,6 +24,7 @@ library(caret)
 library(corrplot)
 library(mice)
 library(e1071)
+library(gridExtra)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -332,22 +333,30 @@ Like collinearity and skewness, the presence of outliers in a data set can also 
 ```{r}
 
 # Create function to count the number of outliers outside of (mult) standard deviations from the mean
-countOutliers <- function(x, mult) {
-    vals <- x[!is.na(x)]
-    mean_val <- mean(vals)
-    loval <- mean_val - (sd(vals) * mult)
-    hival <- mean_val + (sd(vals) * mult)
-    num_outliers <- length(vals[vals < loval | vals > hival])
+getOutliers <- function(x, mult) {
+    mean_val <- mean(x[!is.na(x)])
+    loval <- mean_val - (sd(x[!is.na(x)]) * mult)
+    hival <- mean_val + (sd(x[!is.na(x)]) * mult)
+    #return(vals[vals < loval | vals > hival])
+    return(!is.na(x) & (x < loval | x > hival))
 }
 
 # Set multiplier; outliers are considered as such when they lie outside of (multiplier) standard deviations from the mean
 mult <- 3
+outliers <- apply(dfm[,1:(ncol(dfm)-1)], 2, getOutliers, mult=mult)
+dfout <- data.frame(outliers)
+dfout <- data.frame(colSums(outliers))
+dfout$Variable <- row.names(dfout)
+colnames(dfout) <- c('Outlier.count', 'Variable')
+
+# Filter just those variables with outliers and sort by outlier count
+dfout <- dfout %>%
+    dplyr::select(Variable, Outlier.count) %>%
+    arrange(desc(Outlier.count)) %>%
+    filter(Outlier.count > 0)
 
 # Generate bar graph of outlier counts
 dfout %>%
-    dplyr::select(Variable, Outlier.count) %>%
-    arrange(desc(Outlier.count)) %>%
-    filter(Outlier.count > 0) %>%
     ggplot(aes(x=reorder(Variable, Outlier.count), y=Outlier.count, label=Outlier.count)) +
     geom_bar(stat='identity') +
     coord_flip() +
@@ -359,11 +368,49 @@ dfout %>%
 
 The graph above illustrates that Filler.Speed has the most number of outliers (142, or 5.5% of the data). If models that are sensitive to outliers are used (e.g. linear regression models), the outliers must be handled in some fashion, either by removal or by performing an appropriate transformation.
 
-To better understand the outliers
+To better understand the outliers, we plotted variables with outliers against the outcome variable, pH. In the plots below, outliers outside of three times the standard deviation appear in red.
 
-```{r}
+```{r fig.width=12, fig.height=16}
 
+# Create a function to filter and graph the outliers for a specific column
+graphOutliers <- function(x, mult) {
 
+    # Get an array of T/F values indicating whether each observation is an outlier
+    outlier_array <- getOutliers(dfm[,x], 3)
+    
+    # Create data set consisting only of outliers
+    df_outliers <- dfm[outlier_array,] %>%
+        dplyr::select(PH, any_of(x)) %>%
+        mutate(outlier=T)
+    
+    # Create data set consisting only of non-outliers
+    df_non_outliers <- dfm[!outlier_array,] %>%
+        dplyr::select(PH, any_of(x)) %>%
+        mutate(outlier=F)
+    
+    # Bind the outlier data set to the non-outlier data set
+    dftmp <- df_non_outliers %>%
+        rbind(df_outliers)
+    
+    # Graph the outliers
+    plt <- dftmp %>%
+        filter(!is.na(PH) & !is.na(!!sym(x))) %>%
+        ggplot(aes(x=!!sym(x), y=PH, color=outlier)) +
+        geom_point() +
+        scale_colour_manual(values=c('#e0e0e0', '#c02222')) +
+        ggtitle(paste0('Outliers - ', x))
+    return(plt)
+
+}
+
+# Initialize list of plots
+plts <- list()
+
+# Iterate through all variables with outliers
+for (i in 1:nrow(dfout)) {
+    plts[[i]] <- graphOutliers(dfout[i, 'Variable'], 3)
+}
+do.call("grid.arrange", c(plts, ncol=3))
 
 ```
 
