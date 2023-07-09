@@ -444,11 +444,11 @@ Using the above approach will give us insights into the best way to model the da
 
 ## Data Preparation
 
-As stated, we'll prepare two data sets: the full data set to use with more robust models, and the reduced data set to use with more sensitive models. Additionally, we'll split each set into two additional sets: one set to train the model and another set to test the results of the model. This is a standard practice in modeling that aims to generate a model that is more accurate when it is confronted with new data that it hasn't seen before. This is accomplished by only training the model with a portion of the data (typically 75 or 80%) while withholding the rest to gauge the results. The training data typically further undergoes "cross-validation," another common technique that trains the model over multiple iterations, at each iteration withholding a different proportion of the data to tune the model. After the final iteration, the model with the optimal tuning parameters is selected, and that model is then used to evaluate the previously withheld test data.
+As stated, we'll prepare two data sets: the full data set to use with more robust models, and the reduced data set to use with more sensitive models. But while some models are robust to many types of irregularities such as skewed variables and outliers, missing values can pose a problem even to these models and for many of the functions involved in prepare these models. Therefore, we'll need to handle missing values for both the full set and the reduced set.
 
 ### Imputation
 
-To begin, we'll need to handle missing values. As previously noted, there is a single observation that has twelve missing predictor values. We'll remove this observation as it likely would contribute little information to the model.
+As previously noted, there is a single observation that has twelve missing predictor values. We'll remove this observation as it likely would contribute little information to the model.
 
 ```{r}
 
@@ -460,7 +460,7 @@ dfm_full <- dfm_full[(rowSums(is.na(dfm_full)) < 12),]
 
 ```
 
-As was previously discussed, there are multiple imputation methods that can be used to fill in missing values. The MICE method is robust but is computationally intensive. The number of missing values in our data set is relatively small, so we'll choose a simpler function from the DMwR2 package, knnImputation() (Torgo, 2016). knnImputation() uses a well-known statistical algorithm to find the "k" nearest neighbors to observations having missing values. The value of k is selected by the modeler and for imputation purposes is quite arbitrary. In general, smaller values of k lead to faster but less stable predictions, while larger values of k are more computationally intensive but yield smoother results. We chose a value of 9, which is within a typical range for these applications and provides a good balance of speed versus performance.
+For the remaining missing values, there are multiple imputation methods that can be used to fill in missing values. The MICE method is robust but is computationally intensive. The number of missing values in our data set is relatively small, so we'll choose a simpler method from the DMwR2 package, the knnImputation() function (Torgo, 2016). knnImputation() uses a well-known statistical algorithm to find the "k" most closely related neighbors to observations having missing values. The value of k is selected by the modeler and for imputation purposes is quite arbitrary. In general, smaller values of k lead to faster but less stable predictions, while larger values of k are more computationally intensive but yield smoother results. We chose a value of 9 for k, which is within the typical range for these applications and provides a good balance of performance versus speed.
 
 ```{r}
 
@@ -473,13 +473,35 @@ dfm_full <- knnImputation(dfm_full, k=9)
 
 ```
 
+*[if time, generate plots showing 2 of the most influential variables, with a color parameter of the variable to be imputed, coloring the missing values in red]
+
+### Full data set
+
+Now that we've filled in the missing values, we have a full data set to use with models that are robust to the confounding problems previously discussed. Besides preparing the full and reduced data sets, we'll further split each set into two additional sets: one set to train the model and another with which to test the results of the model. This is a standard practice that aims to generate a model that is more accurate when it is confronted with new data it hasn't yet seen. This is accomplished by training the model with only a portion of the data (typically 75 or 80%) while withholding the rest to gauge the results. The training data typically further undergoes "cross-validation" (CV), another common technique that trains the model over multiple iterations, at each iteration withholding a different proportion of the data to tune the model. After the final iteration, the model with the optimal tuning parameters is selected, and that model is then used to evaluate the previously withheld test data.
+
+We have chosen to use 80% of the data for training, withholding the remaining 20% for testing. And we'll use 10-fold CV, a commonly accepted practice in modeling. We'll use the createDataPartition() function from the caret package (Kuhn, 2022) which partitions the data evenly based on the outcome variable. This avoids a common problem when modeling data having a strong imbalance in values of the outcome variable.
 
 ```{r}
 
+# Create vector of training rows
+train_rows <- createDataPartition(dfm_full$PH, p=0.8, list=F)
 
+# Separate training from test
+dfm_full_train <- dfm_full[train_rows,]
+dfm_full_test <- dfm_full[-train_rows,]
+
+# Generate a pretty table for the report
+data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(dfm_full_test))) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Data partiioning')
 
 ```
 
+It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 32 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
 
 ```{r}
 
