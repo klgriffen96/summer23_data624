@@ -420,7 +420,7 @@ Based on the plot above, there don't appear to be any outliers that are structur
 
 ### Modeling Approach
 
-At this point we'll stop to consider several significant factors that will influence our approach to modeling data even before we beginning cleaning and transforming the data. These factors are as follows:
+At this point we'll stop to consider several significant factors that will influence our approach to modeling even before we beginning cleaning and transforming the data. These factors are as follows:
 
 1) There does not appear to be overtly linear relationships between the outcome variable and the vast majority of predictors, as evidenced by the feature plots.
 1) As shown in the correlation plot, there is significant collinearity between pairs of variables.
@@ -539,26 +539,28 @@ Using the above approach will give us insights into the best way to model the da
 
 ```{r}
 
-
+citation(package = "mice", lib.loc = NULL, auto = NULL)
 
 ```
 
 ### References
 
-Kuhn, M. and Johnson, Kjell (2013). Applied Predictive Modeling, Springer Science+Bsuiness Media.
+Box, G. and Cox, D. (1964). *An Analysis of Transformations*. Journal of the Royal Statistical Society: Series B (Methodological), Volume 26, Issue 2, June 1964, Pages 211-243. https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1964.tb00553.x
 
-Stephanie Glen (2023). "Variance Inflation Factor" From StatisticsHowTo.com: Elementary Statistics for the rest of us! https://www.statisticshowto.com/variance-inflation-factor/.
+Glen, S. (2023). "Variance Inflation Factor" From StatisticsHowTo.com: Elementary Statistics for the rest of us! https://www.statisticshowto.com/variance-inflation-factor/
 
-https://www.rdocumentation.org/packages/regclass/versions/1.6/topics/VIF
+Joanes, D. and Gill, C. (1998). *Comparing measures of sample skewness and kurtosis*. The Statistician, 47, pages 183-189.
 
-https://www.rdocumentation.org/packages/mice/versions/3.16.0/topics/md.pattern
+Kuhn, M. and Johnson, K. (2013). *Applied Predictive Modeling*. Springer Science+Business Media.
+
+Petrie, A. (2020). _regclass: Tools for an Introductory Class in Regression and Modeling_. R package version 1.6,
+<https://CRAN.R-project.org/package=regclass>.
+  
+van Buren, S. (2018). *Flexible Imputation of Missing Data* (2nd ed.). Chapman & Hall/CRC Interdisciplinary Statistic Series. https://stefvanbuuren.name/fimd/sec-FCS.html
+
+van Buren, S. and Groothuis-Oudshoorn, K. (2011). _mice: Multivariate Imputation by Chained Equations in R_. Journal of Statistical Software,
+45(3), 1-67. DOI 10.18637/jss.v045.i03.
 
 van Buren, S., et al. (2023). Multivariate Imputation by Chained Equations. https://cran.r-project.org/web/packages/mice/mice.pdf.
 
-van Buren, S. https://stefvanbuuren.name/fimd/sec-FCS.html
-
-Box, G. and Cox, D. (1964). An Analysis of Transformations. Journal of the Royal Statistical Society: Series B (Methodological), Volume 26, Issue 2, June 1964, Pages 211-243. https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1964.tb00553.x
-
-Yeo, I. and Johnson, R. (2000). A new family of power transformations to improve normality or symmetry. Biometrika, Volume 87, Issue 4, December 2000, Pages 954–959. https://academic.oup.com/biomet/article-abstract/87/4/954/232908.
-
-D. N. Joanes and C. A. Gill (1998), Comparing measures of sample skewness and kurtosis. The Statistician, 47, 183--189.
+Yeo, I. and Johnson, R. (2000). *A new family of power transformations to improve normality or symmetry*. Biometrika, Volume 87, Issue 4, December 2000, pages 954–959. https://academic.oup.com/biomet/article-abstract/87/4/954/232908.
