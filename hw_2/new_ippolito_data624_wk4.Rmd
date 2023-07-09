@@ -19,23 +19,28 @@ knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
 library(tidyverse)
 library(kableExtra)
 library(mice)
+library(DMwR2)  # for knnImputation
+library(e1071)  # for skewness
 library(caret)
 library(corrplot)
 library(ggcorrplot)
 library(PerformanceAnalytics)
 library(MASS)  # for stepwise regression
 library(forecast)
+library(earth)  # for mars modeling
+library(kernlab)  # for svm modeling
+#library(lmtest)  # for Breusch-Pagan test for homoschedasticity
 
 # Set minimal theme
 theme_set(theme_minimal())
 
 ```
 
-## KJ 6.3
+### KJ 6.3
 
 **A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
 
-### (a)
+#### (a)
 
 **Start R and use these commands to load the data:**
 
@@ -52,13 +57,16 @@ data(ChemicalManufacturingProcess)
 
 ```
 
-### (b)
+#### (b)
 
 **A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).**
 
 We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
 
 ```{r warning=FALSE}
+
+# Take a first look
+summary(ChemicalManufacturingProcess)
 
 # Show missing value counts
 dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
@@ -67,8 +75,9 @@ data.frame(Missing=colSums(is.na(dfchem))) %>%
     kbl(caption='Missing value counts') %>%
     kable_classic(full_width=F)
 
-# Use MICE to impute missing values
-imp <- mice(dfchem, printFlag=F)
+# Impute missing values
+#imp <- mice(dfchem, printFlag=F)
+imp <- knnImputation(dfchem, k=3)
 dfchem2 <- complete(imp)
 
 # Verify no more missing values exist
@@ -76,7 +85,24 @@ print(paste0('Missing values after imputation: ', sum(is.na(dfchem2))))
 
 ```
 
-### (c)
+```{r}
+
+# Look for skewness
+# As a general rule of thumb: If skewness is less than -1 or greater than 1, the distribution is highly skewed.
+# If skewness is between -1 and -0.5 or between 0.5 and 1, the distribution is moderately skewed. 
+# If skewness is between -0.5 and 0.5, the distribution is approximately symmetric.
+print("Skewness of columns:")
+colskewness <- apply(dfchem2, 2, e1071::skewness, type=1)
+colskewness
+
+# Show skewed columns
+print("Skewed columns (skewness < -1 or > 1):")
+skewedcols <- dfchem2[colskewness < -1 | colskewness > 1]
+colnames(skewedcols)
+
+```
+
+#### (c)
 
 **Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
 
@@ -120,6 +146,18 @@ dftest2 <- dftest[,-high_corr]
 
 ```
 
+Look at near-zero variance features.
+
+```{r}
+
+# Remove NZV features
+tmp_nzv <- nearZeroVar(dftrain2)
+print(paste0('Near-zero variance features: ', colnames(dftrain2)[tmp_nzv]))
+dftrain2 <- dftrain2[,-tmp_nzv]
+dftest2 <- dftest2[,-tmp_nzv]
+
+```
+
 Now we'll try modeling. First, prepare a data frame for the results, separate the outcome and predictor variables, and set cross-validation parameters.
 
 ```{r}
@@ -139,22 +177,77 @@ ctrl <- trainControl(method='cv', number=10)
 
 ```
 
+Test preprocessing
+
+```{r}
+
+# Testing out pre-processing
+print('-------------------------------------------------------')
+print('No pre-processing')
+set.seed(777)
+fitlm1 <- train(x=trainx, y=trainy, method='lm', trControl=ctrl)
+predict(fitlm1, newdata=as.matrix(testx))
+
+print('-------------------------------------------------------')
+print('Pre-process within train() fuction: Center and scaling only')
+set.seed(777)
+fitlm1 <- train(x=trainx, y=trainy, method='lm', trControl=ctrl, preProcess=c('center', 'scale'))
+predict(fitlm1, newdata=as.matrix(testx))
+
+print('-------------------------------------------------------')
+print('Pre-process within train() fuction: Center, scaling, YeoJohnson')
+set.seed(777)
+fitlm1 <- train(x=trainx, y=trainy, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+predict(fitlm1, newdata=as.matrix(testx))
+
+# Preprocess training x data
+transobj_trainx <- preProcess(trainx, method=c('center', 'scale', 'YeoJohnson'))
+trainx_trans <- predict(transobj_trainx, trainx)
+
+# Preprocess test x data
+transobj_testx <- preProcess(testx, method=c('center', 'scale', 'YeoJohnson'))
+testx_trans <- predict(transobj_testx, testx)
+
+# Fit model using transformed x data
+print('-------------------------------------------------------')
+print('Pre-process outside of train() fuction: Center, scaling, YeoJohnson on x data only')
+set.seed(777)
+fitlm1 <- train(x=trainx_trans, y=trainy, method='lm', trControl=ctrl)
+predict(fitlm1, newdata=as.matrix(testx_trans))
+
+# Preprocess training y data
+transobj_trainy <- preProcess(as.data.frame(trainy), method=c('center', 'scale', 'YeoJohnson'))
+trainy_trans <- predict(transobj_trainy, as.data.frame(trainy))
+
+# Fit model using transformed x and y data
+print('-------------------------------------------------------')
+print('Pre-process outside of train() fuction: Center, scaling, YeoJohnson on both x and y data')
+set.seed(777)
+fitlm1 <- train(x=trainx_trans, y=trainy_trans$trainy, method='lm', trControl=ctrl)
+testy_trans <- predict(fitlm1, newdata=as.matrix(testx_trans))
+transobj_testy <- preProcess(as.data.frame(testy_trans), method=c('center', 'scale', 'YeoJohnson'))
+predict(transobj_testy, as.data.frame(testy_trans))
+
+```
+
 Linear regression
+
+Since linear regression is sensitive to skewness, we'll need to transform the predictors. But since there are zero and negative values, we'll use YeoJohnson instead of Box Cox.
 
 ```{r warning=FALSE}
 
 # Linear model
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='lm', trControl=ctrl)
-fit
-dfr[1,] = data.frame(MOdel='LM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])
+set.seed(777)
+fitlm1 <- train(x=trainx, y=trainy, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm1
+dfr[1,] = data.frame(Model='LM', Tuning.Parameters='', RMSE=fitlm1$results[['RMSE']])
 
 # Stepwise linear model using MASS package/caret
-set.seed(77)
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
-fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
-fit
-dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fit$bestTune[['nvmax']]), RMSE=min(fit$results[['RMSE']]))
+set.seed(777)
+fitlm2 <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm2
+dfr[2,] = data.frame(MOdel='LM', Tuning.Parameters=paste0('nvmax=', fitlm2$bestTune[['nvmax']]), RMSE=min(fitlm2$results[['RMSE']]))
 
 ```
 
@@ -163,18 +256,10 @@ Robust linear regression
 ```{r warning=FALSE}
 
 # Robust linear model - this errors out with "'x' is singular: singular fits are not implemented in 'rlm'"
-set.seed(77)
-# fit <- train(x=trainx, y=trainy, method='rlm', preprocess=c('center', 'scale', 'pca'), trControl=ctrl)
-
-## from Kayleahs
-testData_minus_yield <- trainx
-trans_test <- preProcess(testData_minus_yield, method = c("center", "scale", "YeoJohnson", "nzv"))
-transformed_test <- predict(trans_test, testData_minus_yield)
-fit <- train(transformed_test, 
-                trainy, 
-                method = "rlm", preProcess = "pca", Control = ctrl)
-
-dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=fit$results[['RMSE']])  # temp
+set.seed(777)
+fitrlm <- train(x=trainx, y=trainy, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
+fitrlm
+dfr[3,] = data.frame(Model='RLM', Tuning.Parameters='', RMSE=min(fitrlm$results[['RMSE']]))  # temp
 
 ```
 
@@ -182,18 +267,12 @@ Partial least squares
 
 ```{r warning=FALSE}
 
-# PLS, tuneLength=5
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=5)
-fit
-dfr[4,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=5', RMSE=fit$results[['RMSE']])
-         
-# PLS, tunLength=20
-set.seed(77)
-fit <- train(x=trainx, y=trainy, method='pls', preprocess=c('center', 'scale'), trControl=ctrl, tuneLength=20)
-fit
-dfr[5,] = data.frame(Model='PLS', Tuning.Parameters='tuneLength=20', RMSE=fit$results[['RMSE']])
-         
+# PLS
+set.seed(777)
+fitpls <- train(x=trainx, y=trainy, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx) / 2)
+fitpls
+dfr[4,] = data.frame(Model='PLS', Tuning.Parameters=paste0('ncomp=', fitpls$bestTune), RMSE=min(fitpls$results[['RMSE']]))
+
 ```
 
 Ridge regression
@@ -201,11 +280,11 @@ Ridge regression
 ```{r warning=FALSE}
 
 # Ridge regression
-set.seed(77)
+set.seed(777)
 ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
-fit <- train(x=trainx, y=trainy, method='ridge', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
-fit
-dfr[6,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fit$bestTune[['lambda']]), RMSE=fit$results[['RMSE']])
+fitridge <- train(x=trainx, y=trainy, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+fitridge
+dfr[5,] = data.frame(Model='Ridge', Tuning.Parameters=paste0('labmda=', fitridge$bestTune[['lambda']]), RMSE=min(fitridge$results[['RMSE']]))
 
 ```
 
@@ -213,15 +292,15 @@ Lasso regression
 
 ```{r warning=FALSE}
 
-# Ridge regression
-set.seed(77)
+# Lasso regression
 enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
-fit <- train(x=trainx, y=trainy, method='enet', preprocess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
-fit
-dfr[7,] = data.frame(
+set.seed(777)
+fitlasso <- train(x=trainx, y=trainy, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+fitlasso
+dfr[6,] = data.frame(
     Model='Lasso (enlastic net)', 
-    Tuning.Parameters=paste0('lambda=', fit$bestTune[['lambda']], ', fraction=', fit$bestTune[['fraction']]), 
-    RMSE=fit$results[['RMSE']]
+    Tuning.Parameters=paste0('lambda=', fitlasso$bestTune[['lambda']], ', fraction=', fitlasso$bestTune[['fraction']]), 
+    RMSE=min(fitlasso$results[['RMSE']])
 )
 
 ```
@@ -230,53 +309,89 @@ dfr[7,] = data.frame(
 
 # Model comparison
 dfr %>%
+    filter(!is.na(RMSE)) %>%
     kbl(caption='Model comparison') %>%
     kable_classic(full_width=F)
 
 ```
 
-The stepwise linear model with max parameters=9 was the best-performing model under training conditions, with an RMSE of 1.255.
+Although the stepwise linear model performed the best in terms of RMSE, there were problems with outliers in the final predictors that appears to have biased the model. Therefore, we'll choose the next best model (lasso). The lasso model with max lambda=0.1 and fraction=0.25 was the best-performing model under training conditions, with an RMSE of 1.21.
 
-### (d)
+We'll check residuals to make sure the model is valid.
+
+```{r}
+
+# Predict y values of training data
+predy_train <- predict(fitlasso, s=0.1, fraction=0.25, newdata=as.matrix(trainx))
+
+# Check residual plot
+ggplot() +
+    geom_point(aes(x=predy_train, y=trainy - predy_train)) +
+    ggtitle('Residual plot for best-performing model (stepwise linear regression)')
+
+# Breusch-Pagan test to determine homoschedasticity of residuals
+# Null hypothesis: the residuals are homoschedastic.
+# If the p-value is small, reject the null, i.e., consider the residuals heteroschedastic.
+#bp <- bptest(fitlm2)
+#if (bp$p.value > 0.05 & bp$statistic < 10) {
+#  print(paste0("Breusch-Pagan test for homoschedasticity: The p-value of ", bp$p.value, " is > 0.05 and the test statistic of ", bp$statistic,
+#      " is < 10, so don't reject the null; i.e., the residuals are HOMOSCHEDASTIC"))
+#} else if (bp$p.value <= 0.05) {
+#  print(paste0("Breusch-Pagan test for homoschedasticity: The p-value of ", bp$p.value, " is <= 0.05 and the test statistic is ", bp$statistic,
+#      ", so reject the null; i.e., the residuals are HETEROSCHEDASTIC"))
+#} else {
+#  print(paste0("Breusch-Pagan test for homoschedasticity: The p-value of ", bp$p.value, " and test statistic of ", bp$statistic,
+#      " are inconclusive, so homoschedasticity can't be determined using this test."))
+#}
+
+
+```
+
+The residuals don't exhibit any pattern and appear appropriate for a well-fit model.
+
+#### (d)
 
 **Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
 
-First, calculate the accuracy based on the test test.
+First, calculate the accuracy based on the test set.
 
 ```{r warning=FALSE}
 
-# Rerun the model - stepwise linear model using MASS package/caret
-set.seed(77)
-stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx) / 2, 0)))  # Max number of parameters to use
-fit <- train(x=trainx, y=trainy, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid)
-
 # Generate y predictions
-predy <- predict(fit, newdata=testx)
+predy <- predict(fitlasso, s=0.1, fraction=0.25, newdata=as.matrix(testx))
 
 # Get accuracy results
 accuracy(predy, testy)
 
 ```
 
-As expected, the RMSE for the test set is higher than that of the training set (1.335979 vs 1.225019, respectively). However, the test RMSE is only slightly higher, and the low MAPE value of 2.53 indicates good model performance.
+As expected, the RMSE for the test set is higher than that that of the training set (1.34 versus 1.21, respectively). But the low MAPE value of 2.45 confirms good model performance regardless.
 
-### (e)
+#### (e)
 
 **Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
 
 ```{r}
 
-# Extract coefficients from model
-dftop <- data.frame(Coefficient=coef(fit$finalModel, fit$bestTune[['nvmax']] + 1))
+# Extract coefficients from model (lasso)
+enetCoef <- predict(fitlasso$finalModel, s=0.1, fraction=0.5, mode='fraction', type='coefficients')
+dftop <- data.frame(enetCoef$coefficients) %>%
+    filter(enetCoef.coefficients != 0)
+
+# Extract coefficients from model (stepwise linear regression)
+#lmCoef <- coef(fitlm2$finalModel, id=5)
+#dftop <- as.data.frame(lmCoef)
+
+# Display coefficients
 dftop %>%
-    kbl(caption='Model coefficients') %>%
+    kbl(caption='Non-zero model coefficients') %>%
     kable_classic(full_width=F)
 
 ```
 
-As shown, the five most important variables are all those related to the manufacturing process. This works out favorably, as these are elements that can be controlled or adjusted to have an effect on yield, whereas the biological predictors can't be changed.
+As shown, the three most important variables are all those related to the manufacturing process. This works out favorably, as these are elements that can be controlled or adjusted to have an effect on yield, whereas the biological predictors can't be changed.
 
-### (f)
+#### (f)
 
 **Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
 
@@ -286,24 +401,16 @@ As shown, the five most important variables are all those related to the manufac
 for (p in rownames(dftop)) {
     if (p != '(Intercept)') {  # do not include the intercept
         plt <- dfchem2 %>%
-            ggplot()
-        if (p == 'ManufacturingProcess01' | p == 'ManufacturingProcess09') {  # these are quantitative variables
-            plt <- plt +
-                geom_point(aes(x=eval(sym(p)), y=Yield))
-        } else {  # these are categorical variables
-            plt <- plt +
-                geom_bar(aes(x=eval(sym(p)), y=Yield), stat='identity')
-        }
-        plt <- plt +
-            xlab(p)
+            ggplot(aes(x=eval(sym(p)), y=Yield)) +
+            geom_point() +
+            xlab(p) +
+            geom_smooth(method=lm, formula=y ~ x, linetype=2, color='darkred', se=F)
         print(plt)
     }
 }
 
 ```
 
-* Based on the scatter plot for ManufacturingProcess09, it is evident that increasing this process consistently produces better yields; each unit increase in ManufacturingProcess09 will realize a 0.56-unit gain in yield.
-* The bar plot for ManufacturingProcess33 shows that optimal yields occur when ManufacturingProcess33 is around 64 units.
-* Likewise, yields are optimal when ManufacturingProcess34 is at 2.5 units.
-* If ManufacturingProcess41 is held at 0, the best yields are observed.
-* ManufacturingProcess01 is interesting in that there are three outliers that seemed to skew the results. Without knowing how the data was collected or what those values represent, it is difficult to say whether they should be removed, but from the scatter plot these likely should have been removed prior to modeling. But our interpretation of the problem was to perform the steps as given in the instructions; in a "real-life" scenario, a more rigorous exploration of the data would have been performed before modeling, likely resulting in removing these data points. Based on the small coefficient (0.09) for this predictor, the model interpreted the process to have a slight positive effect on yield.
+* Based on the scatter plot for ManufacturingProcess09, it is evident that increasing this process consistently produces better yields; each unit increase in ManufacturingProcess09 will realize a 0.11-unit gain in yield.
+* Likewise, increasing Manufacturing Process32 has a positive effect on yield (about 8%).
+* On the other hand, ManufacturingProcess13 has an inverse relationship with yield (about 0.02-unit increase in yield for every unit decrease in ManufacturingProcess13).

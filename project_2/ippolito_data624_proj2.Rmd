@@ -1,0 +1,649 @@
+---
+title: "ippolito_data624_proj2"
+author: "Michael Ippolito"
+date: "2023-07-04"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(mice)
+library(e1071)
+library(gridExtra)
+library(flextable)
+library(AppliedPredictiveModeling)
+library(DMwR2)
+library(fastDummies)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## Exploratory Data Analysis
+
+### Load Data
+
+First, we load the data from Github. We had some trouble reading the Excel files, so we converted them to CSV.
+
+```{r}
+
+# Load training data (m=modeling)
+dfm_raw <- read.csv('https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/project_2/StudentData%20-%20TO%20MODEL.csv')
+
+# Load evaluation data
+dfe_raw <- read.csv('https://github.com/klgriffen96/summer23_data624/raw/main/project_2/StudentEvaluation-%20TO%20PREDICT.csv')
+
+```
+
+### Preliminary view
+
+A first look at the data is as follows.
+
+```{r}
+
+# Move outcome variable pH to front for easier access
+dfm <- dfm_raw %>%
+    dplyr::select(PH, !matches('Brand.Code'), Brand.Code)
+str(dfm)
+summary(dfm)
+
+```
+
+We note several things from a cursory first glance:
+
+1) There are 2571 observations in 33 variables.
+1) The outcome variable, pH, is continuous, so this is a regression problem.
+1) Of the 32 predictors, 31 are quantitative variables, and there is a single nominal categorical variable (Brand.Code).
+1) There are a number of missing values but not at a rate that would be debilitating to fitting a model to the data. Additional investigation will be done to determine how best to handle these data points.
+1) Little information was given about the data, so we can't infer units for the variables (for example, it is unknown whether the temperature and pressure variables are in English or metric units).
+
+We'll need to do a small amount of data preparation first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later). This will only be useful for initial data exploration; for modeling purposes, we'll need to handle this variable differently (see Data Preparation below).
+
+```{r}
+
+# Factor categorical variable Brand.Code
+dfm$Brand.Code <- factor(dfm$Brand.Code)
+
+```
+
+### Feature plots
+
+To visually evaluate our data set, we'll generate feature plots of the continuous variables and a boxplot of the single categorical variable (Brand.Code). These plot show the relationship of each continuous variable against the outcome variable (pH) and can be used to detect how individual predictors influence the outcome.
+
+```{r fig.width=14, fig.heigh=12, warning=F}
+
+# Feature plots - exclude the last column, which is Brand.Code (a categorical variable)
+featurePlot(x=dfm[,2:(ncol(dfm)-1)], y=dfm$PH, plot='scatter', main='Feature plots against PH', type=c('p', 'smooth'), span=0.5, layout=c(8, 4), col.line='red')
+
+# Boxplot of Brand.Code against PH
+dfm %>%
+    filter(!is.na(Brand.Code) & !is.na(PH)) %>%
+    ggplot(aes(x=Brand.Code, y=PH)) +
+    geom_boxplot()
+
+```
+
+At first glance there doesn't appear to be any strong relationship between pH and any of the predictors. There is a slightly positive relationship between pH and some variables like pressure vacuum, but in general no strong trends are evident.
+
+We also note that some of the observations have a blank Brand.Code, which we'll have to handle during data preparation.
+
+### Collinearity
+
+We'll also look for collinearity among variables. Collinearity is a problem for linear regression-based models, as these models can generate severely inflated coefficients for predictors that are strongly collinear. In these cases, we have several options:
+
+1) Retain only a single predictor among those that are collinear relative to each other.
+1) Transform the predictors such that collinearity is minimized, for example using principle component analysis (PCA), partial least squares (PLS), or linear discriminant analysis (LDA).
+1) Employ a model that is insensitive (or less sensitive) to collinear predictors, for example ridge, lasso, PLS, or multivariate adaptive regression splines (MARS).
+
+To examine collinearity in our data set, we'll use the corrplot() function from the package of the same name to generate a correlation plot. This shows strongly correlated variables in darker colors and with larger squares. Positive correlations are shown in blue, while negative correlations are in red. Correlation values of 1.0 indicate perfect positive correlation between variables, while values of -1.0 indicate a perfect inverse correlation. The plot is clustered by variables that exhibit strong correlations with each other, which can provide some indication of multicollinearity among groups of variables.
+
+```{r fig.width=11, fig.heigh=8}
+
+# Generate corr plot for pairwise correlations
+corr1 <- cor(dfm[,1:(ncol(dfm)-1)], use='complete')
+corrplot::corrplot(corr1, method='square', order='hclust', type='full', diag=T, tl.cex=0.75, cl.cex=0.75)
+
+```
+
+As shown in the correlation plot, there are some strong correlations among the following six variables:
+
+- Carb.Volume
+- Carb.Rel
+- Alch.Rel
+- Density
+- Bailing
+- Bailing.Lvl
+
+It may be advantageous to remove one or more of these variables, transform them to remove collinearity, or choose a model that is robust to collinearity. Interestingly, these same six variables exhibit a relatively strong inverse relationship with Hyd.Pressure4.
+
+### Multicollinearity
+
+In addition to collinearity, which evaluates relationships between pairs of predictors, we'll look at multicollinearity, which gives a general indication of how much more each predictor is related to the other predictors than to the response variable. To evaluate multicollinearity, we'll fit a simple linear model to the data using the full set of predictors. Then, we'll use the vif() function in the cars package to estimate the variance inflation factor (VIF), which is a statistic purpose-built to measure multicollinearity among variables. Values less than or equal to 1 indicate no multicollinearity, values between 1 and 5 indicate moderate multicollinearity, and values greater than 5 indicate strong multicollinearity (Glen, 2023).
+
+```{r}
+
+# Examine multicollinearity by generating a simple linear model of the data,
+# then looking at the variance inflation factor (VIF) of each variable.
+#     VIF <= 1:      low multicollinearity
+#     1 < VIF <= 5:  moderate multicollinearity
+#     VIF > 5:       high multicollinearity
+library(car)
+lmod <- lm(PH ~ ., data=dfm)
+dfvif <- data.frame(vif(lmod))
+dfvif <- dfvif %>%
+    mutate(Predictor=row.names(dfvif)) %>%
+    rename(VIF=GVIF) %>%
+    dplyr::select(Predictor, VIF) %>%
+    arrange(desc(VIF)) %>%
+    mutate(Rank=rank(-VIF))
+dfvif %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Variance Inflation Factor')
+
+```
+
+As shown in the table almost half (15) of the variables have a VIF greater than 5, which indicate that they exhibit strong multicollinearity. This will inform our decision on the type of model to employ.
+
+It should be noted that, while collinearity and multicollinearity adversely affect a linear regression-based model's capacity to generate useful information about the contribution of each predictor to the outcome, these conditions don't impede the model's performance. Therefore, the presence of collinear or multicollinear predictors don't automatically preclude us from using these types of models. **[need citation]**
+
+### Near-zero-variance predictors
+
+We'll look for variables having near-zero variance (NZV) since some models are sensitive to this condition. A variable exhibiting NZV is typically categorical **[is this true?]** and is further characterized has having only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
+
+To calculate NZV, we'll use the NearZeroVar() function from the caret package. This calculates the ratio of the frequency of the most common value in each variable to that of the next most common value. If the ratio is high, this indicates NZV conditions, and the variable may need special handling if a model that is sensitive to NZV variables are being used (Kuhn, 2022).
+
+The following table shows the frequency ratios of variables in the data set in descending order.
+
+```{r}
+
+# Look for NZV variables
+nzv <- nearZeroVar(dfm, saveMetrics=T)
+nzv$Variable <- row.names(nzv)
+nzv %>% dplyr::select(Variable, everything()) %>%
+    arrange(desc(freqRatio)) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Frequency ratios of variables')
+
+```
+
+As shown, only a single variable (Hyd.Pressure1) exhibited a high enough frequency ratio to be classified as an NZV variable. We'll examine this variable in a bit more detail.
+
+```{r}
+
+# Generate table of top unique values of Hyd.Pressure1
+hpfreq <- dfm %>%
+    group_by(Hyd.Pressure1) %>%
+    summarize(Unique.count=n()) %>%
+    arrange(desc(Unique.count))
+
+# Tally up values other than the top 2
+others <- hpfreq %>%
+    filter(Unique.count < hpfreq[[2,'Unique.count']]) %>%
+    summarize(Unique.count=sum(Unique.count))
+
+# Add the "other values" row to the table
+hpfreq <- hpfreq %>%
+    head(2) %>%
+    rbind(data.frame(Hyd.Pressure1='other values', Unique.count=as.numeric(others))) %>%
+    rename(Value=Hyd.Pressure1) %>%
+    mutate(Percent=round(100 * Unique.count / nrow(dfm), 2))
+
+# Display the table
+hpfreq %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Hyd.Pressure1')
+
+```
+
+As indicated in the table above, a large proportion of the observations have zero values (32.7%). Without knowing anything about how the data was collected or what the variable indicates, it is difficult to know the best way to treat the variable in terms of modeling The best we can do is make an assumption that zero values are correctly entered, structurally sound, and have meaning in the context of the data Based on these assumptions, this variable is a candidate to be dropped if a linear regression-based model is used.
+
+### Missing values
+
+Now we'll examine missing values in the data set. As noted earlier, there aren't that many, but some models are sensitive to missing values. As such, the following options are avaiable:
+
+1) Discard observations that have missing values for many of the predictors.
+1) Discard entire predictors that have many values missing across a great number of observations.
+1) Impute (fill in) the missing values using any of a number of statistical methods available (e.g. mean, median, or K nearest neighbor modeling).
+
+We'll take a first look at missing values on a column-by-column basis.
+
+```{r}
+
+# Count NAs per column
+missing_values <- data.frame(colSums(is.na(dfm)))
+missing_values$Variable <- row.names(missing_values)
+colnames(missing_values) <- c('Missing.values', 'Variable')
+missing_values %>%
+    dplyr::select(Variable, Missing.values) %>%
+    arrange(desc(Missing.values)) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Missing values')
+
+```
+
+A good way to visualize missing values is to use the md.pattern() function from the mice package (van Buren, 2011). This function produces a plot that shows patterns of missing data in order of increasing missing information. The numbers along the left indicate the number of observations that correspond to the pattern indicated by that row of squares. Blue squares indicate no missing values, while red squares indicate missing values. The numbers on the far right indicate the number of variables with missing data for that set of observations.
+
+```{r fig.height=16, fig.width=20}
+
+# Missing value patterns
+md.pattern(dfm, rotate.names=T, plot=T)
+
+```
+
+As shown, there are 2129 observations for which no values are missing, or 82.8% of the data. We note that there are only a few rows with many red squares, indicating that there aren't many observations missing a significant number of variables. There is only a single observation that had missing values numbering in the double digits of predictors (12); this row is likely a good candidate for removal. The remaining data can likely be imputed (filled in) using one of the statistical methods listed above.
+
+An additional option is to use multivariate imputation by chained equations (MICE) (van Buren et al., 2023). MICE uses the fully conditional specification (FCS), which imputes each variable using a separate method. The method used can either be specified by the modeler or chosen by a set of defaults, depending on the kind of variable. For example, there are default methods for continuous variables and those for categorical variables, with additional methods for categorical variables that depend on the number of factors.
+
+### Skewness
+
+Many types of models are sensitive to variables that exhibit skewed distributions, i.e. those that do not exhibit a typical bell-shaped pattern but instead have a disproportionate number of high or low values. Linear regression-based models are particularly susceptible to skewness.
+
+To reduce skewness, skewed variables can often be mathematically transformed, for example by taking the natural logarithm or using a method such as the Box-Cox transformation. This method uses an empirical means to find a transformation of the data (Box and Cox, 1964).
+
+Box-Cox transformations only work on positive values, so if zero or negative values are encountered a different method must be used. If only zero values are observed, a constant (typically 1) can be added to the value before applying the Box-Cox transformation; however, there is debate on what constant to use in these cases. Alternatively, if both zero and negative values are present, a method such as one proposed by Yeo and Johnson (Yeo & Johnson, 2000) can be employed to transform the variable. The Yeo-Johnson method can accept positive, negative, or zero values and, thus, is more robust when values aren't guaranteed to be positive.
+
+To visually examine skewness, we'll generate histograms of the continuous variables.
+
+```{r fig.width=12, fig.height=10, warning=F}
+
+# Generate histograms of continuous variables
+dfm %>%
+    dplyr::select(c(1:(ncol(dfm)-1))) %>%
+    gather() %>%
+    ggplot(aes(x=value)) +
+    geom_histogram(bins=20) +
+    facet_wrap(~key, scales = 'free_x') +
+    ggtitle('Histograms of continuous variables')
+
+```
+
+Some variables exhibit obviously skewed distributions (e.g. Filler.Speed, PSC, and Usage.cont), while others appear to be normally distributed (i.e., approximately symmetric), for example PH and PSC.Fill. Others like Bailing and Bailing.Lvl appear to be bimodal.
+
+To gain a better understanding of which variables are skewed and to what degree they are skewed, we can calculate skewness quantitatively using the e1071 package (Meyer, 2022). Skewness with absolute values that are greater than 1 are considered highly skewed, while those between 0.5 and 1 are moderately skewed. Absolute values less than 0.5 can be considered approximately symmetric (Joanes and Gill, 1998).
+
+The sign of the skewness value indicates in which direction the distribution is skewed: Left-skewed distributions will exhibit negative skewness values, while the sign of right-skewed distributions will be positive.
+
+The following plot quantitatively enumerates the skewness of each variable, ordered by how heavily skewed the variable is.
+
+```{r}
+
+# Look at skewness quantitatively
+# As a general rule of thumb:
+#     highly skewed:            |skewness| > 1
+#     moderately skewed:        0.5 < |skewness| < 1
+#     approximately symmetric:  0 < |skewness| < 0.5
+# Negative values indicate left-skewed distributions; positive values indicate right-skewed distributions.
+
+# Create function to calculate skewness (needed because it handles columns with missing values inconsistently)
+calcSkewness <- function(x, type) {
+    return(e1071::skewness(x[!is.na(x)], type=type))
+}
+
+# Calculate skewness on columns
+colskewness <- data.frame(apply(dfm[,1:(ncol(dfm)-1)], 2, calcSkewness, type=1))
+colskewness$Variable <- row.names(colskewness)
+colnames(colskewness) <- c('Skewness', 'Variable')
+
+# Graph skewness values
+colskewness %>%
+    dplyr::select(Variable, Skewness) %>%
+    arrange(desc(abs(Skewness))) %>%
+    ggplot(aes(x=reorder(Variable, desc(Skewness)), y=Skewness)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    ggtitle('Variable skewness') +
+    xlab('')
+
+```
+
+As seen in the table, six variables are heavily skewed, with the first two being skewed left and the remaining skewed right:
+
+- MFR
+- Filler.Speed
+- Oxygen.Filler
+- Temperature
+- Air.Pressurer
+- PSC.CO2
+
+This reinforces the idea that some type of transformation will be needed if a model is used that is sensitive to skewness (e.g. linear regression-based models). Alternatively, models that aren't sensitive to skewness can be employed (e.g. tree-based models).
+
+### Outliers
+
+Like collinearity and skewness, the presence of outliers in a data set can also negatively impact some models. Outliers are typically defined as those points which lie beyond a certain number of standard deviations from the mean (typically 2, 2.5, or 3 times the standard deviation). We'll examine our data set for outlying values that fall under this definition, using a cutoff of 3 standard deviations.
+
+```{r}
+
+# Create function to count the number of outliers outside of (mult) standard deviations from the mean
+getOutliers <- function(x, mult) {
+    mean_val <- mean(x[!is.na(x)])
+    loval <- mean_val - (sd(x[!is.na(x)]) * mult)
+    hival <- mean_val + (sd(x[!is.na(x)]) * mult)
+    #return(vals[vals < loval | vals > hival])
+    return(!is.na(x) & (x < loval | x > hival))
+}
+
+# Set multiplier; outliers are considered as such when they lie outside of (multiplier) standard deviations from the mean
+mult <- 3
+outliers <- apply(dfm[,1:(ncol(dfm)-1)], 2, getOutliers, mult=mult)
+dfout <- data.frame(outliers)
+dfout <- data.frame(colSums(outliers))
+dfout$Variable <- row.names(dfout)
+colnames(dfout) <- c('Outlier.count', 'Variable')
+
+# Filter just those variables with outliers and sort by outlier count
+dfout <- dfout %>%
+    dplyr::select(Variable, Outlier.count) %>%
+    arrange(desc(Outlier.count)) %>%
+    filter(Outlier.count > 0)
+
+# Generate bar graph of outlier counts
+dfout %>%
+    ggplot(aes(x=reorder(Variable, Outlier.count), y=Outlier.count, label=Outlier.count)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    geom_text(check_overlap=T, hjust=-0.1, nudge_x=0.05) +
+    ggtitle('Outliers (only variables with outliers shown)') +
+    xlab('') + ylab('Outlier count')
+
+```
+
+The graph above illustrates that Filler.Speed has the most number of outliers (142, or 5.5% of the data). If models that are sensitive to outliers are used (e.g. linear regression-based models), the outliers must be handled in some way, either by removal or by performing an appropriate transformation.
+
+To better understand the outliers, we plotted variables having outliers against the outcome variable, pH. In the plots below, outliers beyond three times the standard deviation appear in red.
+
+```{r fig.width=12, fig.height=16}
+
+# Create a function to filter and graph the outliers for a specific column
+graphOutliers <- function(x, mult) {
+
+    # Get an array of T/F values indicating whether each observation is an outlier
+    outlier_array <- getOutliers(dfm[,x], 3)
+    
+    # Create data set consisting only of outliers
+    df_outliers <- dfm[outlier_array,] %>%
+        dplyr::select(PH, any_of(x)) %>%
+        mutate(outlier=T)
+    
+    # Create data set consisting only of non-outliers
+    df_non_outliers <- dfm[!outlier_array,] %>%
+        dplyr::select(PH, any_of(x)) %>%
+        mutate(outlier=F)
+    
+    # Bind the outlier data set to the non-outlier data set
+    dftmp <- df_non_outliers %>%
+        rbind(df_outliers)
+    
+    # Graph the outliers
+    plt <- dftmp %>%
+        filter(!is.na(PH) & !is.na(!!sym(x))) %>%
+        ggplot(aes(x=!!sym(x), y=PH, color=outlier)) +
+        geom_point() +
+        scale_colour_manual(values=c('#e0e0e0', '#c02222')) +
+        theme(legend.position='none')
+    return(plt)
+
+}
+
+# Initialize list of plots
+plts <- list()
+
+# Iterate through all variables with outliers
+for (i in 1:nrow(dfout)) {
+    plts[[i]] <- graphOutliers(dfout[i, 'Variable'], 3)
+}
+do.call("grid.arrange", c(plts, ncol=3))
+
+```
+
+Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are highly suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers.
+
+## Modeling Approach
+
+At this point we'll stop to consider several significant factors that will influence our approach to modeling even before we begin cleaning and transforming the data. These factors are as follows:
+
+1) There does not appear to be overtly linear relationships between the outcome variable and the vast majority of predictors, as evidenced by the feature plots. This indicates that a linear regression-based approach may not yield optimal results.
+1) As shown in the correlation plot, there is significant collinearity between pairs of variables.
+1) About half of the variables exhibit heavy multicollinearity (see the table of VIFs above).
+1) Only one variable can be considered NZV, so this won't be a strong influence on our modeling approach.
+1) Likewise, missing values are present but not in significant enough quantities to strongly influence how we'll choose to model the data.
+1) Six variables are heavily skewed (see the histograms and skewness plot above) and would likely need to be transformed for any models that are sensitive to this condition.
+1) There are a significant number of outliers, but we can't be certain if these are valid data points.
+
+Considering these factors, we decided to use an approach to modeling similar to that described in Chapter 10 of our text (Kuhn and Johnson, 2013). Namely, we will create two data sets to be used for two purposes, as follows:
+
+1) **Full data set**: With minimal modification, we'll use the full data set for those models which are robust to the confounding factors listed above (e.g. collinearity, skewness, and outliers).
+1) **Reduced data set**: For models such as those based on linear regression, we'll prepare another data set that handles the above confounding factors. For example, skewed predictors will be transformed, variables exhibiting multicollinearity will be addressed, and, if feasible, outliers will be excluded.
+
+Using the above approach will give us insights into the best way to model the data using all available models, while generally adhering to the recommended best practices for each model type.
+
+## Data Preparation
+
+As stated, we'll prepare two data sets: the full data set to use with more robust models, and the reduced data set to use with more sensitive models. But while some models are robust to many types of irregularities such as skewed variables and outliers, missing values can pose a problem even to these models and for many of the functions involved in prepare these models. Therefore, we'll need to handle missing values for both the full set and the reduced set.
+
+### Imputation
+
+As previously noted, there is a single observation that has twelve missing predictor values. We'll remove this observation as it likely would contribute little information to the model.
+
+```{r}
+
+# Init the full data set
+dfm_full <- dfm
+
+# Remove row with 12 missing values
+dfm_full <- dfm_full[(rowSums(is.na(dfm_full)) < 12),]
+
+```
+
+For the remaining missing values, there are multiple imputation methods that can be used to fill in missing values. The MICE method is robust but is computationally intensive. The number of missing values in our data set is relatively small, so we'll choose a simpler method from the DMwR2 package, the knnImputation() function (Torgo, 2016). knnImputation() uses a well-known statistical algorithm to find the "k" most closely related neighbors to observations having missing values. The value of k is selected by the modeler and for imputation purposes is quite arbitrary. In general, smaller values of k lead to faster but less stable predictions, while larger values of k are more computationally intensive but yield smoother results. We chose a value of 9 for k, which is within the typical range for these applications and provides a good balance of performance versus speed.
+
+```{r}
+
+# MICE - not used due to computational intensiveness
+#imp <- mice(dfm_full, maxit=5, m=5, seed=77)
+#complete(imp)
+
+# Use knnImputation to impute values
+dfm_full <- knnImputation(dfm_full, k=9)
+
+```
+
+*[if time, generate plots showing 2 of the most influential variables, with a color parameter of the variable to be imputed, coloring the missing values in red]
+
+### Dummy variables
+
+One additional step we'll need to take is to recode the categorical variable Brand.Code into so-called "dummy" variables. This creates a series of variables that take either a 0 or 1 as a value; each variable indicates the presence (value of 1) or absence (value of 0) of that particular Brand.Code. We'll use the fastDummies package (Kaplan, 2020), which automatically creates dummy variables for factor- or character-type variables.
+
+Before doing this, however, we'll need to handle observations that have a blank Brand.Code. It is unknown whether these are unbranded (e.g. the generic version of the product) or if these are missing data points. Without this knowledge--and because these data were blank values as opposed to NAs, we'll assume that these were unbranded and will categorized them as such.
+
+```{r}
+
+# Convert Brand.Code back to character
+dfm_full$Brand.Code <- as.character(dfm_full$Brand.Code)
+
+# Categorize blank values as "U" for unbranded
+dfm_full <- dfm_full %>%
+    mutate(Brand.Code = ifelse(Brand.Code == '', 'U', Brand.Code))
+
+# Create dummies for factor and character variables;
+# avoid multicollinearity by removing the first dummy column
+dfm_full <- dummy_cols(dfm_full, select_columns='Brand.Code', remove_first_dummy=T, remove_selected_columns=T)
+
+```
+
+It is noted that after the dummy columns are created, the data set now has 35 predictors instead of 32.
+
+### Full data set
+
+Now that we've filled in the missing values, we have a full data set to use with models that are robust to the confounding problems previously discussed. Besides preparing the full and reduced data sets, we'll further split each set into two additional sets: one set to train the model and another with which to test the results of the model. This is a standard practice that aims to generate a model that is more accurate when it is confronted with new data it hasn't yet seen. This is accomplished by training the model with only a portion of the data (typically 75 or 80%) while withholding the rest to gauge the results. The training data typically further undergoes "cross-validation" (CV), another common technique that trains the model over multiple iterations, at each iteration withholding a different proportion of the data to tune the model. After the final iteration, the model with the optimal tuning parameters is selected, and that model is then used to evaluate the previously withheld test data.
+
+We have chosen to use 80% of the data for training, withholding the remaining 20% for testing. And we'll use 10-fold CV, a commonly accepted practice in modeling. We'll use the createDataPartition() function from the caret package (Kuhn, 2022) which partitions the data evenly based on the outcome variable. This avoids a common problem when modeling data having a strong imbalance in values of the outcome variable.
+
+```{r}
+
+# Create vector of training rows
+train_rows <- createDataPartition(dfm_full$PH, p=0.8, list=F)
+
+# Separate training from test
+dfm_full_train <- dfm_full[train_rows,]
+dfm_full_test <- dfm_full[-train_rows,]
+
+# Generate a pretty table for the report
+data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(dfm_full_test))) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Data partiioning')
+
+```
+
+It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 36 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
+
+### Reduced data set
+
+Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities.
+
+### Collinearity
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+
+```
+
+## References
+
+Box, G. and Cox, D. (1964). _An Analysis of Transformations_. Journal of the Royal Statistical Society: Series B (Methodological), Volume 26, Issue 2, June 1964, Pages 211-243. https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1964.tb00553.x
+
+Glen, S. (2023). "Variance Inflation Factor" From StatisticsHowTo.com: Elementary Statistics for the rest of us! https://www.statisticshowto.com/variance-inflation-factor/
+
+Joanes, D. and Gill, C. (1998). _Comparing measures of sample skewness and kurtosis_. The Statistician, 47, pages 183-189.
+
+Kaplan J. (2020). _fastDummies: Fast Creation of Dummy (Binary) Columns and Rows from Categorical Variables_. R package version 1.6.3, <https://CRAN.R-project.org/package=fastDummies>.
+
+Kuhn M. (2022). _caret: Classification and Regression Training_. R package version 6.0-93, <https://CRAN.R-project.org/package=caret>.
+
+Kuhn, M. and Johnson, K. (2013). _Applied Predictive Modeling_. Springer Science+Business Media.
+
+Meyer D. et al. (2022). _e1071: Misc Functions of the Department of Statistics, Probability Theory Group (Formerly: E1071), TU Wien_. R package version 1.7-12, <https://CRAN.R-project.org/package=e1071>.
+  
+Petrie, A. (2020). _regclass: Tools for an Introductory Class in Regression and Modeling_. R package version 1.6,
+<https://CRAN.R-project.org/package=regclass>.
+
+Torgo, L. (2016). _Data Mining with R, learning with case studies_ (2nd ed.). Chapman and Hall/CRC. http://ltorgo.github.io/DMwR2.
+
+van Buren, S. (2018). _Flexible Imputation of Missing Data_ (2nd ed.). Chapman & Hall/CRC Interdisciplinary Statistic Series. https://stefvanbuuren.name/fimd/sec-FCS.html
+
+van Buren, S. and Groothuis-Oudshoorn, K. (2011). _mice: Multivariate Imputation by Chained Equations in R_. Journal of Statistical Software,
+45(3), 1-67. DOI 10.18637/jss.v045.i03.
+
+van Buren, S., et al. (2023). _Multivariate Imputation by Chained Equations_. https://cran.r-project.org/web/packages/mice/mice.pdf.
+
+Yeo, I. and Johnson, R. (2000). _A new family of power transformations to improve normality or symmetry_. Biometrika, Volume 87, Issue 4, December 2000, pages 954–959. https://academic.oup.com/biomet/article-abstract/87/4/954/232908.

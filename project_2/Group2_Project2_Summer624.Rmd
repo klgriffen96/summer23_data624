@@ -1,0 +1,94 @@
+---
+title: "Data 624: Project 2: Regression Modeling"
+author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
+date: "7/4/2023"
+output:
+  word_document: 
+    toc: true
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+For this project we were provided production data from a beverage manufacturing company. The goal was to use the data provided to predict potential for hydrogen (pH), which represents acidity/alkalinity, because pH is a key performance indicator (KPI).  We were provided 2,571 cases with 33 variables, including pH, to use to train our models. We were then given 267 cases to predict the pH of. 
+
+
+## Exploratory Data Analysis
+
+```{r setup, warning=FALSE, echo = FALSE}
+library(httr)
+library(kableExtra)
+library(tidyverse)
+library(ggfortify)
+library(gridExtra)
+
+set.seed(123)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+### Loading the Data
+
+The first step is to read in the data that was provided to us. One thing to note is we had trouble with the "StudentData - TO MODEL.xlsx" file so we converted it to a csv file.
+
+```{r get_data, warning=FALSE, echo = FALSE}
+# github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/project_2/StudentData%20-%20TO%20MODEL.xlsx"
+# temp_file <- tempfile(fileext = ".xlsx")
+# req <- GET(github_link, 
+#           # write result to disk
+#            write_disk(path = temp_file))
+# 
+# df_model <- read.xlsx(temp_file)
+# df_model <- readxl::read_excel("C:/Users/kgriffen/Downloads/StudentData - TO MODEL.xlsx", sheet = "Subset", .name_repair = "universal")
+
+df_model <- read.csv("https://github.com/klgriffen96/summer23_data624/raw/main/project_2/StudentData%20-%20TO%20MODEL.csv")
+
+head(df_model, 10) |>
+  kbl(caption = "Excerpt of Data to Model") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+github_link <- "https://github.com/klgriffen96/summer23_data624/raw/main/project_2/StudentEvaluation-%20TO%20PREDICT.xlsx"
+temp_file <- tempfile(fileext = ".xlsx")
+req <- GET(github_link, 
+          # write result to disk
+           write_disk(path = temp_file))
+
+df_predict <- readxl::read_excel(temp_file)
+
+head(df_predict, 10) |>
+  kbl(caption = "Excerpt of Data to Predict") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+Now we can take a look at the summary and str functions to get a better idea of the data.
+
+```{r}
+summary(df_model)
+str(df_model)
+
+```
+
+We can see that there are 2.571 cases of 33 variables.
+
+### First Visualization of the Data
+
+### Missing Values
+
+### Correlation between variables
+
+### Outliers
+
+## Modeling and Forecasting 
+
+### Imputation
+
+### Modeling 
+
+## Conclusion

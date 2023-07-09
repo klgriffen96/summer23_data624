@@ -1,0 +1,167 @@
+---
+title: "ippolito_data624_wk6"
+author: "Michael Ippolito"
+date: "2023-07-04"
+output: html_document
+---
+
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
+library(tidyverse)
+library(kableExtra)
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+**Market basket analysis**
+
+Imagine 10000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer’s basket – and therefore ‘Market Basket Analysis’.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a transaction and each column in a row represents an item.
+
+Here is the dataset = GroceryDataSet.csv  (comma separated file)
+
+You assignment is to use R to mine the data for association rules.  You should report support, confidence and lift and your top 10 rules by lift.  Turn in as you would the other problems from HA and KJ.  You should packaged this with your HW #2 set.
+
+NOTE:  Bonus - Use a Python Library in addition to R and get a Bonus.
+
+### Load data
+
+```{r}
+
+# Load data from github
+dfmkt_raw <- read.csv('https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv', header=F)
+
+```
+
+### Data preparation
+
+```{r}
+
+# Add column for transaction number and reorder so that it is first
+dfmkt <- dfmkt_raw
+dfmkt$trans.num <- row.names(dfmkt_raw)
+dfmkt <- dfmkt %>%
+    dplyr::select(trans.num, 1:ncol(dfmkt) - 1)
+
+# Gather each item into its own row (i.e. make df into "long" format)
+dfmkt <- gather(dfmkt, key='item.num', value='item.name', 2:ncol(dfmkt)) %>% arrange(trans.num, item.num)
+
+# Remove items that are blank
+dfmkt <- dfmkt %>%
+    filter(item.name != '')
+
+# Create a variable to indicate the presence of this item for this transaction
+dfmkt$val <- 1
+
+# Spread to "wide" format; this will fill in "1" into columns that have that item
+# and NAs into columns that don't have that item
+dfmkt2 <- spread(dfmkt, key='item.name', value='val', fill=NA)
+
+# Replace the NAs with zeros
+dfmkt2[is.na(dfmkt2)] <- 0
+
+# Combine rows by trnasaction num
+dfmkt2 <- dfmkt2 %>%
+    group_by(trans.num) %>%
+    summarize(across(c(-item.num), list(sum))) %>%
+    ungroup()
+
+```
+
+### EDA
+
+```{r}
+
+# Show unique item count
+print(paste0('There are ', length(unique(dfmkt$item.name)), ' unique items.'))
+
+# Get item counts
+dfgrp <- dfmkt %>%
+    group_by(item.name) %>%
+    summarize(ct=n()) %>%
+    ungroup() %>%
+    arrange(desc(ct))
+
+# Most frequently purchased items
+#dfgrp %>%
+#    head(10) %>%
+#    kbl(caption='10 Most purchased items') %>%
+#    kable_classic(full_width=F)
+
+# Most frequently purchased items
+dfgrp %>%
+    arrange(desc(ct)) %>%
+    head(10) %>%
+    ggplot(aes(x=reorder(item.name, ct), y=ct)) +
+    geom_bar(stat='identity', width=0.5) +
+    geom_text(aes(label=ct), hjust=-0.1) +
+    coord_flip() +
+    xlab('Item') +
+    ylab('Count') +
+    ggtitle('Most puchased items')
+
+# Infrequently purchased items
+#dfgrp %>%
+#    arrange(ct) %>%
+#    head(10) %>%
+#    kbl(caption='10 Least purchased items') %>%
+#    kable_classic(full_width=F)
+
+# Infrequently purchased items
+dfgrp %>%
+    arrange(ct) %>%
+    head(10) %>%
+    ggplot(aes(x=reorder(item.name, desc(ct)), y=ct)) +
+    geom_bar(stat='identity', width=0.5) +
+    geom_text(aes(label=ct), hjust=-0.1) +
+    coord_flip() +
+    xlab('Item') +
+    ylab('Count') +
+    ggtitle('Least puchased items')
+
+# Numbers of items purchased per transaction
+data.frame(Items=rowSums(dfmkt2[,2:ncol(dfmkt2)])) %>%
+    ggplot() +
+    geom_histogram(aes(x=Items), bins=30) +
+    xlab('Items purchased per transaction') +
+    ylab('') +
+    ggtitle('Number of items purchased per transaction')
+
+```
+
+### Association rules
+
+```{r}
+
+# Load required packages
+library(arules)
+library(arulesViz)
+
+# Create transactional database from data set
+trans <- read.transactions('https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv', 
+    format='basket', rm.duplicates=F, sep=',')
+
+# Create associate rules
+arules <- apriori(trans, parameter=list(supp = 0.01, conf=0.5, maxlen=10))
+
+# Show top 10 rules
+inspect(rev(arules[1:10])) %>%
+    kbl(caption='Top 10 association rules') %>%
+    kable_classic(full_width=F)
+
+```
