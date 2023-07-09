@@ -418,6 +418,27 @@ do.call("grid.arrange", c(plts, ncol=3))
 
 Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are highly suspect (e.g. Alch.Rel), but without having been given a description of the data set or knowing how the data was collected, one could only hazard a guess as to which are valid and which are true outliers.
 
+### Modeling Approach
+
+At this point we'll stop to consider several significant factors that will influence our approach to modeling data even before we beginning cleaning and transforming the data. These factors are as follows:
+
+1) There does not appear to be overtly linear relationships between the outcome variable and the vast majority of predictors, as evidenced by the feature plots.
+1) As shown in the correlation plot, there is significant collinearity between pairs of variables.
+1) About half of the variables exhibit heavy multicollinearity (see the table of VIFs above).
+1) Only one variable can be considered NZV, so this isn't a strong influencer in our modeling approach.
+1) Likewise, missing values are present but not in significant enough quantities that this will strongly influence how we'll choose to model the data.
+1) Six variables are heavily skewed (see the histograms and skewness plot above).
+1) There are a significant number of outliers, but we can't be certain if these are valid data points.
+
+Considering these factors, we decided to use an approach to modeling similar to that described in Chapter 10 of our text (Kuhn and Johnson, 2013). Namely, we will create two data sets to be used for two purposes, as follows:
+
+1) **Full data set**: With minimal modifications, we'll use the full data set for those models which are robust to the confounding factors listed above (e.g. collinearity, skewness, and outliers).
+1) **Reduced data set**: For models such as those based on linear regression, we'll prepare another data set that handles the above confounding factors. For example, skewed predictors will be transformed, variables exhibiting multicollinearity will be removed, and outliers will be excluded.
+
+Using the above approach will give us insights into the best way to model the data using all available models, while generally adhering to the recommended best practices for each model type.
+
+### Data Preparation
+
 ```{r}
 
 
