@@ -424,7 +424,7 @@ do.call("grid.arrange", c(plts, ncol=3))
 
 ```
 
-Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are highly suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers.
+Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are somewhat suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers. Besides the suspect Alch.Rel data points, the remaining points appear to be valid (though extreme) values when compared to the main body of data points.
 
 ## Modeling Approach
 
@@ -523,7 +523,7 @@ data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(
     fontsize(size = 10) %>%
     line_spacing(space = 1) %>%
     hline(part = "all") %>%
-    set_caption('Data partiioning')
+    set_caption('Data partiioning (full data set)')
 
 ```
 
@@ -599,23 +599,53 @@ summary(dfm_red[,skewed_vars])
 
 ```
 
-Since PSC.CO2 contains zero values, we'll use the Yeo-Johnson transformation instead. Since the caret package supports Yeo-Johnson natively, we'll perform the transformations as part of the preprocessing component during modeling. This has the advantage that predictions made based on our models will be automatically back-transformed rather than requiring manual transformation.
+Since PSC.CO2 contains zero values, we'll use the Yeo-Johnson transformation instead. Because the caret package supports Yeo-Johnson natively, we'll perform the transformations as part of the preprocessing component during modeling. This has the advantage that predictions made based on our models will be automatically back-transformed rather than requiring manual transformation.
 
-### 
+### Outliers
 
-```{r}
-
-
-
-```
-
+Based on the outlier plots from earlier, most of the data points beyond the three-standard-deviation cutoff appear to be valid data points, though located on the extreme outer edges of the main body of data. One exception is Alch.Red, which includes six somewhat suspect points located along the left- and right-hand margins of the plot. The other possible exception is data point exhibiting a PH value of 9.36. It is unclear whether these are truly outliers that should be excluded. But in either case, they are points of high influence and they are small in number, so we chose to remove them.
 
 ```{r}
 
+# Remove sus PH data point
+dfm_red <- dfm_red[dfm_red$PH < 9.36,]
 
+# Find cutoff value of Alch.Red (three sd's)
+loval <- mean(dfm_red$Alch.Rel) - (3 * sd(dfm_red$Alch.Rel))
+hival <- mean(dfm_red$Alch.Rel) + (3 * sd(dfm_red$Alch.Rel))
+
+# Remove sus Alch.Red data points
+dfm_red <- dfm_red[dfm_red$Alch.Rel >+ loval & dfm_red$Alch.Rel <= hival,]
 
 ```
 
+After all modifications to the reduced data set have been made, our final version of the reduced set contains 2563 observations of 29 predictors, reduced from the full set of 2570 observations of 35 predictors. As with the full data set, we'll split the reduced set into training and test sets and verify that the number of predictors doesn't exceed the number of observations.
+
+```{r}
+
+# Create vector of training rows
+train_rows <- createDataPartition(dfm_red$PH, p=0.8, list=F)
+
+# Separate training from test
+dfm_red_train <- dfm_red[train_rows,]
+dfm_red_test <- dfm_red[-train_rows,]
+
+# Generate a pretty table for the report
+data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_red_train), nrow(dfm_red_test))) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Data partiioning (reduced data set)')
+
+```
+
+The table above shows that the test set contains 511 observations, far exceeding the number of predictors (29), so we won't need to worry about models that perform poorly when there are more predictors than observations.
+
+## Modeling
+
+Now that we have a full and reduced set of data, along with training and test sets within those two sets, we can begin modeling.
 
 ```{r}
 
