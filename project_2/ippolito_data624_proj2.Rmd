@@ -163,7 +163,7 @@ As shown in the table almost half (15) of the variables have a VIF greater than 
 
 It should be noted that, while collinearity and multicollinearity adversely affect a linear regression-based model's capacity to generate useful information about the contribution of each predictor to the outcome, these conditions don't impede the model's performance. Therefore, the presence of collinear or multicollinear predictors don't automatically preclude us from using these types of models. **[need citation]**
 
-### Near-zero-variance predictors
+### Near-zero variance
 
 We'll look for variables having near-zero variance (NZV) since some models are sensitive to this condition. A variable exhibiting NZV is typically categorical **[is this true?]** and is further characterized has having only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
 
@@ -533,35 +533,75 @@ It is important to note that some models are sensitive to the numbers of observa
 
 Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities.
 
+First, we'll make a copy of the full data set (prior to splitting into training and test sets).
+
+```{r}
+
+# Copy the full set to the reduced set
+dfm_red <- dfm_full
+
+```
+
 ### Collinearity
 
-```{r}
+As we noted earlier, there the data set exhibits some collinearity and multicollinearity. Based on VIFs calculated previously, almost half the predictors exhibited strong multicollinearity. Since removing that many predictors would likely cause a detrimental loss of information, a different approach is warranted. We opted to use the approach presented by Kuhl and Johnson (2013) in which predictors are iteratively compared pairwise, removing those with the highest correlation value until a certain threshold is attained. While this procedure only addresses collinearity rather than multicollinearity, it can nonetheless yield significant improvements to model performance and stability.
 
-
-
-```
-
+We'll use the findCorrelation() function to find candidate variables for removal due to collinearity. 
 
 ```{r}
 
-
+# Get correlation table
+corr2 <- cor(dfm_red[,2:ncol(dfm_red)], use='complete')
+corr_vars <- findCorrelation(corr2, names=T, cutoff=0.9)
+data.frame(Variable=corr_vars) %>%
+    arrange(Variable) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Highly correlated variables') %>%
+    delete_part( part = "header")
 
 ```
 
+This is a manageable number of variables, so we'll proceed with removing them from our data set.
 
 ```{r}
 
-
+# Remove highly correlated variables from the reduced data set
+dfm_red <- dfm_red[,-match(corr_vars, colnames(dfm_red))]
 
 ```
 
+### Near-zero variance
+
+There is only a single predictor with NZV (Hyd.Pressure1). Since this condition can negatively impact linear regression-based models, we'll remove that from the reduced data set.
 
 ```{r}
 
-
+# Remove NZV variables from the reduced data set
+dfm_red <- dfm_red[,-match('Hyd.Pressure1', colnames(dfm_red))]
 
 ```
 
+### Skewness
+
+We'll first check for zero or negative values for the variables that were earlier identified as skewed. If there are any such values, the Box-Cox transformation will be infeasible and we'll have to use a different method.
+
+```{r}
+
+# Define variables id'ed as skewed from earlier
+skewed_vars <- c('MFR', 'Filler.Speed', 'Oxygen.Filler', 'Temperature', 'Air.Pressurer', 'PSC.CO2')
+
+# Generate summary to look at min/max values - we're looking for zero or negative values
+summary(dfm_red[,skewed_vars])
+
+```
+
+Since PSC.CO2 contains zero values, we'll use the Yeo-Johnson transformation instead. Since the caret package supports Yeo-Johnson natively, we'll perform the transformations as part of the preprocessing component during modeling. This has the advantage that predictions made based on our models will be automatically back-transformed rather than requiring manual transformation.
+
+### 
 
 ```{r}
 
