@@ -25,6 +25,7 @@ library(gridExtra)
 library(flextable)
 library(AppliedPredictiveModeling)
 library(DMwR2)
+library(fastDummies)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -69,7 +70,7 @@ We note several things from a cursory first glance:
 1) There are a number of missing values but not at a rate that would be debilitating to fitting a model to the data. Additional investigation will be done to determine how best to handle these data points.
 1) Little information was given about the data, so we can't infer units for the variables (for example, it is unknown whether the temperature and pressure variables are in English or metric units).
 
-We'll need to do a small amount of data wrangling first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later).
+We'll need to do a small amount of data preparation first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later). This will only be useful for initial data exploration; for modeling purposes, we'll need to handle this variable differently (see Data Preparation below).
 
 ```{r}
 
@@ -80,7 +81,7 @@ dfm$Brand.Code <- factor(dfm$Brand.Code)
 
 ### Feature plots
 
-Next, we'll generate feature plots of the continuous variables and a boxplot of the single categorical variable (Brand.Code). These plot show the relationship of each continuous variable against the outcome variable (pH) and can be used to detect how individual predictors influence the outcome.
+To visually evaluate our data set, we'll generate feature plots of the continuous variables and a boxplot of the single categorical variable (Brand.Code). These plot show the relationship of each continuous variable against the outcome variable (pH) and can be used to detect how individual predictors influence the outcome.
 
 ```{r fig.width=14, fig.heigh=12, warning=F}
 
@@ -96,6 +97,8 @@ dfm %>%
 ```
 
 At first glance there doesn't appear to be any strong relationship between pH and any of the predictors. There is a slightly positive relationship between pH and some variables like pressure vacuum, but in general no strong trends are evident.
+
+We also note that some of the observations have a blank Brand.Code, which we'll have to handle during data preparation.
 
 ### Collinearity
 
@@ -475,6 +478,29 @@ dfm_full <- knnImputation(dfm_full, k=9)
 
 *[if time, generate plots showing 2 of the most influential variables, with a color parameter of the variable to be imputed, coloring the missing values in red]
 
+### Dummy variables
+
+One additional step we'll need to take is to recode the categorical variable Brand.Code into so-called "dummy" variables. This creates a series of variables that take either a 0 or 1 as a value; each variable indicates the presence (value of 1) or absence (value of 0) of that particular Brand.Code. We'll use the fastDummies package (Kaplan, 2020), which automatically creates dummy variables for factor- or character-type variables.
+
+Before doing this, however, we'll need to handle observations that have a blank Brand.Code. It is unknown whether these are unbranded (e.g. the generic version of the product) or if these are missing data points. Without this knowledge--and because these data were blank values as opposed to NAs, we'll assume that these were unbranded and will categorized them as such.
+
+```{r}
+
+# Convert Brand.Code back to character
+dfm_full$Brand.Code <- as.character(dfm_full$Brand.Code)
+
+# Categorize blank values as "U" for unbranded
+dfm_full <- dfm_full %>%
+    mutate(Brand.Code = ifelse(Brand.Code == '', 'U', Brand.Code))
+
+# Create dummies for factor and character variables;
+# avoid multicollinearity by removing the first dummy column
+dfm_full <- dummy_cols(dfm_full, select_columns='Brand.Code', remove_first_dummy=T, remove_selected_columns=T)
+
+```
+
+It is noted that after the dummy columns are created, the data set now has 35 predictors instead of 32.
+
 ### Full data set
 
 Now that we've filled in the missing values, we have a full data set to use with models that are robust to the confounding problems previously discussed. Besides preparing the full and reduced data sets, we'll further split each set into two additional sets: one set to train the model and another with which to test the results of the model. This is a standard practice that aims to generate a model that is more accurate when it is confronted with new data it hasn't yet seen. This is accomplished by training the model with only a portion of the data (typically 75 or 80%) while withholding the rest to gauge the results. The training data typically further undergoes "cross-validation" (CV), another common technique that trains the model over multiple iterations, at each iteration withholding a different proportion of the data to tune the model. After the final iteration, the model with the optimal tuning parameters is selected, and that model is then used to evaluate the previously withheld test data.
@@ -501,7 +527,13 @@ data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(
 
 ```
 
-It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 32 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
+It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 36 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
+
+### Reduced data set
+
+Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities.
+
+### Collinearity
 
 ```{r}
 
@@ -593,6 +625,8 @@ Box, G. and Cox, D. (1964). _An Analysis of Transformations_. Journal of the Roy
 Glen, S. (2023). "Variance Inflation Factor" From StatisticsHowTo.com: Elementary Statistics for the rest of us! https://www.statisticshowto.com/variance-inflation-factor/
 
 Joanes, D. and Gill, C. (1998). _Comparing measures of sample skewness and kurtosis_. The Statistician, 47, pages 183-189.
+
+Kaplan J. (2020). _fastDummies: Fast Creation of Dummy (Binary) Columns and Rows from Categorical Variables_. R package version 1.6.3, <https://CRAN.R-project.org/package=fastDummies>.
 
 Kuhn M. (2022). _caret: Classification and Regression Training_. R package version 6.0-93, <https://CRAN.R-project.org/package=caret>.
 
