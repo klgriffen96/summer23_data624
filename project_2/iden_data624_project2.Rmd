@@ -27,6 +27,7 @@ library(rpart)
 library(party)
 library(gbm)
 library(Cubist)
+library(forecast)
 library(doParallel)
 library(kableExtra)
 library(corrplot)
@@ -319,6 +320,17 @@ cl <- makeCluster(4)
 registerDoParallel(cl)
 ```
 
+We create a function for extracting the MAPE (Mean Absolute Percentage Error) along with RMSE, Rsquared, and MAE of our predictions and actual data,
+
+```{r}
+metrics <- function(predicted, actual){
+  mape = accuracy(predicted, actual)['Test set','MAPE']
+  measures = postResample(predicted, actual) 
+  metrics = c(measures, MAPE=mape)
+  return(metrics)
+}
+```
+
 ## Selecting a Model {.tabset}
 
 ### Linear Model
@@ -332,7 +344,7 @@ lm.model <- train(train.x, train.y,
                   tuneLength = 10)
 
 lm.preds <- predict(lm.model, test.x)
-lm.results <- postResample(lm.preds, test.y)
+lm.results <- metrics(lm.preds, test.y)
 stopCluster(cl)
 registerDoSEQ()
 ```
@@ -351,7 +363,7 @@ pls.model <- train(train.x, train.y,
                    tuneLength = 10)
 
 pls.preds <- predict(pls.model, test.x)
-pls.results <- postResample(pls.preds, test.y)
+pls.results <- metrics(pls.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -374,7 +386,7 @@ ridge.model <- train(train.x, train.y,
                      )
 
 ridge.preds <- predict(ridge.model, test.x)
-ridge.results <- postResample(ridge.preds, test.y)
+ridge.results <- metrics(ridge.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -397,7 +409,7 @@ enet.model <- train(train.x, train.y,
                     trControl = ctrl)
 
 enet.preds <- predict(enet.model, test.x)
-enet.results <- postResample(enet.preds, test.y)
+enet.results <- metrics(enet.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -421,7 +433,7 @@ knn.model <- train(train.x, train.y,
                    tuneLength = 10)
 
 knn.preds <- predict(knn.model, test.x) 
-knn.results <- postResample(knn.preds, test.y)
+knn.results <- metrics(knn.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -458,7 +470,7 @@ nnet.model <- train(train.x.nnet, train.y,
                     maxit = 100)
 
 nnet.preds <- predict(nnet.model, test.x.nnet)
-nnet.results <- postResample(nnet.preds, test.y)
+nnet.results <- metrics(nnet.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -480,7 +492,7 @@ mars.model <- train(train.x, train.y,
                     trControl = ctrl)
 
 mars.preds <- predict(mars.model, test.x)
-mars.results <- postResample(mars.preds, test.y)
+mars.results <- metrics(as.numeric(mars.preds), test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -499,7 +511,7 @@ svmR.model <- train(train.x, train.y,
                     trControl = ctrl)
 
 svmR.preds <- predict(svmR.model, test.x)
-svmR.results <- postResample(svmR.preds, test.y)
+svmR.results <- metrics(svmR.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -507,7 +519,7 @@ registerDoSEQ()
 
 ### Single Tree      
 
-```{r}
+```{r, warning=FALSE, cache=TRUE}
 set.seed(100)
 
 rpart.model <- train(train.x, train.y,
@@ -515,12 +527,12 @@ rpart.model <- train(train.x, train.y,
                      tuneLength = 10)
 
 rpart.preds <- predict(rpart.model, test.x)
-rpart.results <- postResample(rpart.preds, test.y)
+rpart.results <- metrics(rpart.preds, test.y)
 ```
 
 ### Bagged Trees    
 
-```{r}
+```{r, warning=FALSE, cache=TRUE}
 set.seed(100)
 
 bagged.model <- train(train.x, train.y,
@@ -528,13 +540,13 @@ bagged.model <- train(train.x, train.y,
                       tuneLength = 10)
 
 bagged.preds <- predict(bagged.model, test.x)
-bagged.results <- postResample(bagged.preds, test.y)
+bagged.results <- metrics(bagged.preds, test.y)
 ```
 
 
 ### Random Forest    
 
-```{r}
+```{r, warning=FALSE, cache=TRUE}
 set.seed(1)
 
 rf.model <- randomForest(train.x, train.y,
@@ -542,7 +554,7 @@ rf.model <- randomForest(train.x, train.y,
                          ntree = 1000)
 
 rf.preds <- predict(rf.model, test.x)
-rf.results <- postResample(rf.preds, test.y)
+rf.results <- metrics(rf.preds, test.y)
 ```
 
 ### Gradient Boosting   
@@ -564,10 +576,10 @@ gbm.model <- train(train.x, train.y,
                   method = "gbm",
                   tuneGrid = gbm.grid,
                   verbose = FALSE,
-                  trControl = parallel.config)
+                  trControl = ctrl)
 
 gbm.preds <- predict(gbm.model, test.x)
-gbm.results <- postResample(gbm.preds, test.y)
+gbm.results <- metrics(gbm.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -586,7 +598,7 @@ cubist.model <- train(train.x, train.y,
                       trControl = ctrl)
 
 cubist.preds <- predict(cubist.model, test.x)
-cubist.results <- postResample(cubist.preds, test.y)
+cubist.results <- metrics(cubist.preds, test.y)
 
 stopCluster(cl)
 registerDoSEQ()
@@ -596,18 +608,24 @@ registerDoSEQ()
 ## Model Metrics
 
 ```{r}
-rbind("linear model" = lm.results,
+results <- rbind("linear model" = lm.results,
 "partial least squares" = pls.results,
 "ridge regression" = ridge.results,
 "elastic net" = enet.results,
 "knn" = knn.results,
 "neural network" = nnet.results,
 "mars" = mars.results,
-"svm" = svm.results,
+"svm" = svmR.results,
 "single tree regression" = rpart.results,
 "bagged trees" = bagged.results,
 "random forest" = rf.results,
 "gradient boosting" = gbm.results,
 "cubist" = cubist.results )
+
+results |> 
+  data.frame() |>
+  arrange(MAPE) |>
+  kable() |>
+  kable_styling()
 ```
 
