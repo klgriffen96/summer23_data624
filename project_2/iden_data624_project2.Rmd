@@ -169,12 +169,13 @@ data.frame(variable = names(nas), missing = nas, row.names = NULL) |>
 ```{r}
 data.frame(variable = names(nas), pct_missing = round(nas * 100,2), row.names = NULL) |>
   arrange(desc(nas)) |>
+  head(10) |>
   kable() |>
   kable_styling()
 
 ```
 
-8.25% of the `mfr` variable is missing, and 4.7% of the `brand.code`s are NA -- we will impute these using K-nearest neighbors.
+8.25% of the `mfr` variable is missing, we may decide to drop this variable.
 
 Let's check for correlation amongst the predictors,
 
