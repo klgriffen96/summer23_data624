@@ -49,10 +49,6 @@ The data is provided in three files:
 
 The data is stored locally for pre-processing and uploaded to GitHub as .csv for storage and access,
 
-```{r working-directory, include=FALSE}
-setwd('/Users/joshiden/Documents/Classes/CUNY SPS/Summer 2023/DATA624/PROJECTS/PJ2')
-```
-
 ```{r loading-data, warning=FALSE, message=FALSE, cache=TRUE, error=FALSE}
 # local filepaths
 columns.file <- 'Copy of Data Columns, Types.xlsx'
