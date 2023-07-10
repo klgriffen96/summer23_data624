@@ -144,13 +144,12 @@ The bi-modality appears to account for most of the distributions, however there 
 
 Now let's take a look at the relationship between the numerical predictors and response,
 
-```{r}
-
-
+```{r, fig.height = 8}
 featurePlot(x = select(model.data, -c(ph, brand.code)),
             y = model.data$ph,
             plot = "scatter",
-            layout = c(4, 4))
+            layout = c(6, 6),
+            col = "lightblue")
 ```
 
 We can see there is no linear relationship between the predictors and response.
@@ -270,7 +269,7 @@ md.clean <- cbind(md.clean, dummies) |>
   select(-brand.code)
 ```
 
-### Missing Values
+### Data Imputation
 
 Next we impute the missing values using knn imputation.
 
@@ -372,7 +371,7 @@ registerDoSEQ()
 
 ### Ridge Regression    
 
-```{r}
+```{r, cache=TRUE}
 cl <- makeCluster(4)
 registerDoParallel(cl)
 
@@ -395,7 +394,7 @@ registerDoSEQ()
 
 ### Elastic Net
 
-```{r}
+```{r, cache=TRUE}
 cl <- makeCluster(4)
 registerDoParallel(cl)
 
@@ -630,3 +629,4 @@ results |>
   kable_styling()
 ```
 
+The cubist model has the best performance by all metrics.
