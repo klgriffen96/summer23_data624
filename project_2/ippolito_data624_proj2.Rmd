@@ -19,6 +19,7 @@ knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6)
 library(tidyverse)
 library(caret)
 library(corrplot)
+library(car)
 library(mice)
 library(e1071)
 library(gridExtra)
@@ -146,7 +147,6 @@ In addition to collinearity, which evaluates relationships between pairs of pred
 #     VIF <= 1:      low multicollinearity
 #     1 < VIF <= 5:  moderate multicollinearity
 #     VIF > 5:       high multicollinearity
-library(car)
 lmod <- lm(PH ~ ., data=dfm)
 dfvif <- data.frame(vif(lmod))
 dfvif <- dfvif %>%
@@ -265,7 +265,7 @@ md.pattern(dfm, rotate.names=T, plot=T)
 
 ```
 
-As shown, there are 2129 observations for which no values are missing, or 82.8% of the data. We note that there are only a few rows with many red squares, indicating that there aren't many observations missing a significant number of variables. There is only a single observation that had missing values numbering in the double digits of predictors (12); this row is likely a good candidate for removal. The remaining data can likely be imputed (filled in) using one of the statistical methods listed above.
+As shown, there are 2129 observations for which no values are missing, or 82.8% of the data. We note that there are only a few rows with many red squares, indicating that there aren't many observations missing a significant number of variables. There is only a single observation that had missing values numbering in the double digits of predictors (12); this row is likely a good candidate for removal. In addition, one of the predictors (MFR) contained a significant number of missing values across all observations (212 values, or 8.2% of the data) and should likely be removed. The remaining data can be imputed (filled in) using one of the statistical methods listed above.
 
 An additional option is to use multivariate imputation by chained equations (MICE) (van Buren et al., 2023). MICE uses the fully conditional specification (FCS), which imputes each variable using a separate method. The method used can either be specified by the modeler or chosen by a set of defaults, depending on the kind of variable. For example, there are default methods for continuous variables and those for categorical variables, with additional methods for categorical variables that depend on the number of factors.
 
@@ -451,21 +451,28 @@ Considering these factors, we decided to use an approach to modeling similar to 
 
 Using the above approach will give us insights into the best way to model the data using all available models, while generally adhering to the recommended best practices for each model type.
 
+Although we will create two data sets (full and reduced), there is nothing preventing us from running both data sets through all models. We expect linear regression-based models to be unstable and to perform poorly on the full set, but there is no inherent disadvantage to doing so.
+
+Since the outcome variable (pH) is continuous, this is a regression problem, so we'll naturally choose regression-based models. We'll start by performing linear regression-based modeling, then move to non-linear regression models, followed by tree-based regression models.
+
 ## Data Preparation
 
 As stated, we'll prepare two data sets: the full data set to use with more robust models, and the reduced data set to use with more sensitive models. But while some models are robust to many types of irregularities such as skewed variables and outliers, missing values can pose a problem even to these models and for many of the functions involved in prepare these models. Therefore, we'll need to handle missing values for both the full set and the reduced set.
 
 ### Imputation
 
-As previously noted, there is a single observation that has twelve missing predictor values. We'll remove this observation as it likely would contribute little information to the model.
+As previously noted, there is a single observation that has 12 missing predictor values. We'll remove this observation as it likely would contribute little information to the model. In addition, we'll remove the predictor (MFR) that contains a large number of missing values relative to the total number of observations; there were 212 missing values for this predictor, or 8.2% of the data.
 
 ```{r}
 
 # Init the full data set
 dfm_full <- dfm
 
-# Remove row with 12 missing values
+# Remove observation with 12 missing values
 dfm_full <- dfm_full[(rowSums(is.na(dfm_full)) < 12),]
+
+# Remove the MFR predictor because it has 212 missing values (8.2% of the data)
+dfm_full <- dfm_full %>% select(-MFR)
 
 ```
 
@@ -481,8 +488,6 @@ For the remaining missing values, there are multiple imputation methods that can
 dfm_full <- knnImputation(dfm_full, k=9)
 
 ```
-
-*[if time, generate plots showing 2 of the most influential variables, with a color parameter of the variable to be imputed, coloring the missing values in red]
 
 ### Dummy variables
 
@@ -505,7 +510,7 @@ dfm_full <- dummy_cols(dfm_full, select_columns='Brand.Code', remove_first_dummy
 
 ```
 
-It is noted that after the dummy columns are created, the data set now has 35 predictors instead of 32.
+It is noted that after the dummy columns are created, the data set now has 34 predictors instead of 31.
 
 ### Full data set
 
@@ -516,6 +521,7 @@ We have chosen to use 80% of the data for training, withholding the remaining 20
 ```{r}
 
 # Create vector of training rows
+set.seed(77)
 train_rows <- createDataPartition(dfm_full$PH, p=0.8, list=F)
 
 # Separate training from test
@@ -539,17 +545,15 @@ data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(
 
 ```
 
-It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 36 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
+It is important to note that some models are sensitive to the numbers of observations compared to the number of parameters. Models that must invert linear matrices are mathematically unsolvable if the number of parameters exceeds the number of observations. Cross validation must also be taken into account when evaluating the observation-to-parameter count; for example, ten-fold CV only uses 90% of the observations for training. In our data set, we have 34 predictor variables and 513 observations in the smaller of the two data sets. Using ten-fold CV results in 461 observations still available to use for training, so the observation-to-parameter count isn't something we have to worry about for this situation.
 
 ### Reduced data set
 
 Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities.
 
-First, we'll make a copy of the full data set (prior to splitting into training and test sets).
-
 ```{r}
 
-# Copy the full set to the reduced set
+# First, make a copy the full set to the reduced set
 dfm_red <- dfm_full
 
 ```
@@ -604,7 +608,7 @@ We'll first check for zero or negative values for the variables that were earlie
 ```{r}
 
 # Define variables id'ed as skewed from earlier
-skewed_vars <- c('MFR', 'Filler.Speed', 'Oxygen.Filler', 'Temperature', 'Air.Pressurer', 'PSC.CO2')
+skewed_vars <- c('Filler.Speed', 'Oxygen.Filler', 'Temperature', 'Air.Pressurer', 'PSC.CO2')
 
 # Generate summary to look at min/max values - we're looking for zero or negative values
 summary(dfm_red[,skewed_vars])
@@ -615,27 +619,30 @@ Since PSC.CO2 contains zero values, we'll use the Yeo-Johnson transformation ins
 
 ### Outliers
 
-Based on the outlier plots from earlier, most of the data points beyond the three-standard-deviation cutoff appear to be valid data points, though located on the extreme outer edges of the main body of data. One exception is Alch.Red, which includes six somewhat suspect points located along the left- and right-hand margins of the plot. The other possible exception is data point exhibiting a PH value of 9.36. It is unclear whether these are truly outliers that should be excluded. But in either case, they are points of high influence and they are small in number, so we chose to remove them.
+Based on the outlier plots from earlier, most of the data points beyond the three-standard-deviation cutoff appear to be valid data points, though located on the extreme outer edges of the main body of data. One exception is Alch.Red, which includes six somewhat suspect points located along the left- and right-hand margins of the plot. The other possible exception is data point exhibiting a PH value of 9.36. It is unclear whether these are truly outliers that should be excluded. But in either case, this variable was already identified as exhibiting high collinearity and has already been removed from the reduced data set.
 
 ```{r}
 
 # Remove sus PH data point
 dfm_red <- dfm_red[dfm_red$PH < 9.36,]
 
+# Alch.Red has already been removed, so no need to do anything there with outliers
+
 # Find cutoff value of Alch.Red (three sd's)
-loval <- mean(dfm_red$Alch.Rel) - (3 * sd(dfm_red$Alch.Rel))
-hival <- mean(dfm_red$Alch.Rel) + (3 * sd(dfm_red$Alch.Rel))
+#loval <- mean(dfm_red$Alch.Rel) - (3 * sd(dfm_red$Alch.Rel))
+#hival <- mean(dfm_red$Alch.Rel) + (3 * sd(dfm_red$Alch.Rel))
 
 # Remove sus Alch.Red data points
-dfm_red <- dfm_red[dfm_red$Alch.Rel >+ loval & dfm_red$Alch.Rel <= hival,]
+#dfm_red <- dfm_red[dfm_red$Alch.Rel >+ loval & dfm_red$Alch.Rel <= hival,]
 
 ```
 
-After all modifications to the reduced data set have been made, our final version of the reduced set contains 2563 observations of 29 predictors, reduced from the full set of 2570 observations of 35 predictors. As with the full data set, we'll split the reduced set into training and test sets and verify that the number of predictors doesn't exceed the number of observations.
+After all modifications to the reduced data set have been made, our final version of the reduced set contains 2569 observations of 28 predictors, reduced from the full set of 2570 observations of 34 predictors. As with the full data set, we'll split the reduced set into training and test sets and verify that the number of predictors doesn't exceed the number of observations.
 
 ```{r}
 
 # Create vector of training rows
+set.seed(77)
 train_rows <- createDataPartition(dfm_red$PH, p=0.8, list=F)
 
 # Separate training from test
@@ -661,20 +668,28 @@ data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_red_train), nrow(d
 
 ```
 
-The table above shows that the test set contains 511 observations, far exceeding the number of predictors (29), so we won't need to worry about models that perform poorly when there are more predictors than observations.
+The table above shows that the test set contains 512 observations, far exceeding the number of predictors (28), so we won't need to worry about models that perform poorly when there are more predictors than observations.
 
 ## Modeling
 
-Now that we have a full and reduced set of data--and training and test sets within those two sets--we can begin modeling. We'll start by performing linear regression-based modeling on the reduced data set.
+Now that we have a full and reduced set of data--and training and test sets within those two sets--we can begin modeling. As we mentioned, we'll run both the full and reduced data sets through all models, as there is no inherent disadvantage to do so, while recognizing that some models will be unstable and perform poorly.
+
+We'll start by performing linear regression-based modeling, then move to non-linear regression models, followed by tree-based regression models.
 
 ```{r}
 
 # Create a data frame to store the results
-dfr <- data.frame(matrix(nrow=0, ncol=5))
-colnames(dfr) <- c('Data.Set', 'Model', 'Tuning.Parameters', 'RMSE.Train', 'RMSE.Test')
+dfr <- data.frame(matrix(nrow=0, ncol=7))
+colnames(dfr) <- c('Data.Set', 'Model', 'Model.Class', 'Tuning.Parameters', 'RMSE.Train', 'RMSE.Test', 'MAPE.Test')
 
 # specify 10x cross-validation
 ctrl <- trainControl(method='cv', number=10)
+
+# Create function to calculate MAPE
+mape <- function(predicted, actual) {
+    mape <- mean(abs((actual - predicted) / actual)) * 100
+    return (mape)
+}
 
 ```
 
@@ -692,11 +707,12 @@ predlm1 <- predict(fitlm1, testx_red)
 dfr[1,] <- data.frame(
     Data.Set='Reduced', 
     Model='Linear model', 
+    Model.Class='Linear',
     Tuning.Parameters='', 
     RMSE.Train=min(fitlm1$results[['RMSE']]),
-    RMSE.Test=postResample(predlm1, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predlm1, testy_red)[['RMSE']],
+    MAPE.Test=mape(predlm1, testy_red)
 )
-# plot(fitlm1)  # no tuning parameters, so no plot
 
 # Stepwise linear model using MASS package/caret
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
@@ -707,11 +723,12 @@ predlm2 <- predict(fitlm2, testx_red)
 dfr[2,] <- data.frame(
     Data.Set='Reduced', 
     Model='Stepwise linear model', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('nvmax=', fitlm2$bestTune[['nvmax']]), 
     RMSE.Train=min(fitlm2$results[['RMSE']]),
-    RMSE.Test=postResample(predlm2, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predlm2, testy_red)[['RMSE']],
+    MAPE.Test=mape(predlm2, testy_red)
 )
-plot(fitlm2)
 
 ```
 
@@ -727,11 +744,12 @@ predlm1_full <- predict(fitlm1_full, testx_full)
 dfr[19,] <- data.frame(
     Data.Set='Full', 
     Model='Linear model', 
+    Model.Class='Linear',
     Tuning.Parameters='', 
     RMSE.Train=min(fitlm1_full$results[['RMSE']]),
-    RMSE.Test=postResample(predlm1_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predlm1_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predlm1_full, testy_full)
 )
-plot(fitlm1_full)
 
 # Stepwise linear model using MASS package/caret
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
@@ -742,11 +760,12 @@ predlm2_full <- predict(fitlm2_full, testx_full)
 dfr[20,] <- data.frame(
     Data.Set='Full', 
     Model='Stepwise linear model', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('nvmax=', fitlm2_full$bestTune[['nvmax']]), 
     RMSE.Train=min(fitlm2_full$results[['RMSE']]),
-    RMSE.Test=postResample(predlm2_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predlm2_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predlm2_full, testy_full)
 )
-plot(fitlm2_full)
 
 ```
 
@@ -764,11 +783,12 @@ predrlm <- predict(fitrlm, testx_red)
 dfr[3,] <- data.frame(
     Data.Set='Reduced', 
     Model='Robust linear regression', 
+    Model.Class='Linear',
     Tuning.Parameters='', 
     RMSE.Train=min(fitrlm$results[['RMSE']]),
-    RMSE.Test=postResample(predrlm, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predrlm, testy_red)[['RMSE']],
+    MAPE.Test=mape(predrlm, testy_red)
 )
-plot(fitrlm)
 
 ```
 
@@ -784,11 +804,12 @@ predrlm_full <- predict(fitrlm_full, testx_full)
 dfr[21,] <- data.frame(
     Data.Set='Full', 
     Model='Robust linear regression', 
+    Model.Class='Linear',
     Tuning.Parameters='', 
     RMSE.Train=min(fitrlm_full$results[['RMSE']]),
-    RMSE.Test=postResample(predrlm_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predrlm_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predrlm_full, testy_full)
 )
-plot(fitrlm_full)
 
 ```
 
@@ -806,11 +827,12 @@ predpls <- predict(fitpls, testx_red)
 dfr[4,] <- data.frame(
     Data.Set='Reduced', 
     Model='Partial least squares', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('ncomp=', fitpls$bestTune), 
     RMSE.Train=min(fitpls$results[['RMSE']]),
-    RMSE.Test=postResample(predpls, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predpls, testy_red)[['RMSE']],
+    MAPE.Test=mape(predpls, testy_red)
 )
-plot(fitpls)
 
 ```
 
@@ -826,11 +848,12 @@ predpls_full <- predict(fitpls_full, testx_full)
 dfr[22,] <- data.frame(
     Data.Set='Full', 
     Model='Partial least squares', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('ncomp=', fitpls_full$bestTune), 
     RMSE.Train=min(fitpls_full$results[['RMSE']]),
-    RMSE.Test=postResample(predpls_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predpls_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predpls_full, testy_full)
 )
-plot(fitpls_full)
 
 ```
 
@@ -849,11 +872,12 @@ predridge <- predict(fitridge, testx_red)
 dfr[5,] <- data.frame(
     Data.Set='Reduced', 
     Model='Ridge regression', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('labmda=', round(fitridge$bestTune[['lambda']], 4)), 
     RMSE.Train=min(fitridge$results[['RMSE']]),
-    RMSE.Test=postResample(predridge, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predridge, testy_red)[['RMSE']],
+    MAPE.Test=mape(predridge, testy_red)
 )
-plot(fitridge)
 
 ```
 
@@ -870,11 +894,12 @@ predridge_full <- predict(fitridge_full, testx_full)
 dfr[23,] <- data.frame(
     Data.Set='Full', 
     Model='Ridge regression', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('labmda=', round(fitridge_full$bestTune[['lambda']], 4)), 
     RMSE.Train=min(fitridge_full$results[['RMSE']]),
-    RMSE.Test=postResample(predridge_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predridge_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predridge_full, testy_full)
 )
-plot(fitridge_full)
 
 ```
 
@@ -893,11 +918,12 @@ predlasso <- predict(fitlasso, testx_red)
 dfr[6,] <- data.frame(
     Data.Set='Reduced',
     Model='Lasso (enlastic net)', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('lambda=', fitlasso$bestTune[['lambda']], ', fraction=', fitlasso$bestTune[['fraction']]), 
     RMSE.Train=min(fitlasso$results[['RMSE']]),
-    RMSE.Test=postResample(predlasso, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predlasso, testy_red)[['RMSE']],
+    MAPE.Test=mape(predlasso, testy_red)
 )
-plot(fitlasso)
 
 ```
 
@@ -914,11 +940,12 @@ predlasso_full <- predict(fitlasso_full, testx_full)
 dfr[24,] <- data.frame(
     Data.Set='Full',
     Model='Lasso (enlastic net)', 
+    Model.Class='Linear',
     Tuning.Parameters=paste0('lambda=', fitlasso_full$bestTune[['lambda']], ', fraction=', fitlasso_full$bestTune[['fraction']]), 
     RMSE.Train=min(fitlasso_full$results[['RMSE']]),
-    RMSE.Test=postResample(predlasso_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predlasso_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predlasso_full, testy_full)
 )
-plot(fitlasso_full)
 
 ```
 
@@ -936,11 +963,12 @@ predknn <- predict(fitknn, testx_red)
 dfr[7,] <- data.frame(
     Data.Set='Reduced',
     Model='knn', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('k=', fitknn$bestTune[['k']]), 
     RMSE.Train=min(fitknn$results[['RMSE']]),
-    RMSE.Test=postResample(predknn, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predknn, testy_red)[['RMSE']],
+    MAPE.Test=mape(predknn, testy_red)
 )
-plot(fitknn)
 
 ```
 
@@ -956,11 +984,12 @@ predknn_full <- predict(fitknn_full, testx_full)
 dfr[25,] <- data.frame(
     Data.Set='Full',
     Model='knn', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('k=', fitknn_full$bestTune[['k']]), 
     RMSE.Train=min(fitknn_full$results[['RMSE']]),
-    RMSE.Test=postResample(predknn_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predknn_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predknn_full, testy_full)
 )
-plot(fitknn_full)
 
 ```
 
@@ -979,11 +1008,12 @@ predmars <- predict(fitmars, testx_red)
 dfr[8,] <- data.frame(
     Data.Set='Reduced',
     Model='MARS', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('degree=', fitmars$bestTune[['degree']], ', nprune=', fitmars$bestTune[['nprune']]), 
     RMSE.Train=min(fitmars$results[['RMSE']]),
-    RMSE.Test=postResample(predmars, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predmars, testy_red)[['RMSE']],
+    MAPE.Test=mape(predmars, testy_red)
 )
-plot(fitmars)
 
 ```
 
@@ -1000,11 +1030,12 @@ predmars_full <- predict(fitmars_full, testx_full)
 dfr[26,] <- data.frame(
     Data.Set='Full',
     Model='MARS', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('degree=', fitmars_full$bestTune[['degree']], ', nprune=', fitmars_full$bestTune[['nprune']]), 
     RMSE.Train=min(fitmars_full$results[['RMSE']]),
-    RMSE.Test=postResample(predmars_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predmars_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predmars_full, testy_full)
 )
-plot(fitmars_full)
 
 ```
 
@@ -1022,11 +1053,12 @@ predsvm <- predict(fitsvm, testx_red)
 dfr[9,] <- data.frame(
     Data.Set='Reduced',
     Model='SVM', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('C=', fitsvm$bestTune[['C']], ', sigma=', round(fitsvm$bestTune[['sigma']], 3)), 
     RMSE.Train=min(fitsvm$results[['RMSE']]),
-    RMSE.Test=postResample(predsvm, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predsvm, testy_red)[['RMSE']],
+    MAPE.Test=mape(predsvm, testy_red)
 )
-plot(fitsvm)
 
 ```
 
@@ -1042,11 +1074,12 @@ predsvm_full <- predict(fitsvm_full, testx_full)
 dfr[27,] <- data.frame(
     Data.Set='Full',
     Model='SVM', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('C=', fitsvm_full$bestTune[['C']], ', sigma=', round(fitsvm_full$bestTune[['sigma']], 3)), 
     RMSE.Train=min(fitsvm_full$results[['RMSE']]),
-    RMSE.Test=postResample(predsvm_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predsvm_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predsvm_full, testy_full)
 )
-plot(fitsvm_full)
 
 ```
 
@@ -1066,11 +1099,12 @@ prednnet <- predict(fitnnet, testx_red)
 dfr[10,] <- data.frame(
     Data.Set='Reduced',
     Model='Neural net', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('decay=', fitnnet$bestTune[['decay']], ', size=', fitnnet$bestTune[['size']], ', bag=False'), 
     RMSE.Train=min(fitnnet$results[['RMSE']]),
-    RMSE.Test=postResample(prednnet, testy_red)[['RMSE']]
+    RMSE.Test=postResample(prednnet, testy_red)[['RMSE']],
+    MAPE.Test=mape(prednnet, testy_red)
 )
-plot(fitnnet)
 
 ```
 
@@ -1088,11 +1122,12 @@ prednnet_full <- predict(fitnnet_full, testx_full)
 dfr[28,] <- data.frame(
     Data.Set='Full',
     Model='Neural net', 
+    Model.Class='Nonlinear',
     Tuning.Parameters=paste0('decay=', fitnnet_full$bestTune[['decay']], ', size=', fitnnet_full$bestTune[['size']], ', bag=False'), 
     RMSE.Train=min(fitnnet_full$results[['RMSE']]),
-    RMSE.Test=postResample(prednnet_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(prednnet_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(prednnet_full, testy_full)
 )
-plot(fitnnet_full)
 
 ```
 
@@ -1110,11 +1145,12 @@ predcart1 <- predict(fitcart1, testx_red)
 dfr[11,] <- data.frame(
     Data.Set='Reduced',
     Model='Basic CART (tuned w/complexity parameter)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('cp=', round(fitcart1$bestTune[['cp']], 4)), 
     Train.RMSE=min(fitcart1$results[['RMSE']]),
-    RMSE.Test=postResample(predcart1, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predcart1, testy_red)[['RMSE']],
+    MAPE.Test=mape(predcart1, testy_red)
 )
-plot(fitcart1)
 
 ```
 
@@ -1130,11 +1166,12 @@ predcart1_full <- predict(fitcart1_full, testx_full)
 dfr[29,] <- data.frame(
     Data.Set='Full',
     Model='Basic CART (tuned w/complexity parameter)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('cp=', round(fitcart1_full$bestTune[['cp']], 4)), 
     Train.RMSE=min(fitcart1_full$results[['RMSE']]),
-    RMSE.Test=postResample(predcart1_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predcart1_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predcart1_full, testy_full)
 )
-plot(fitcart1_full)
 
 ```
 
@@ -1151,11 +1188,12 @@ predcart2 <- predict(fitcart2, testx_red)
 dfr[12,] = data.frame(
     Data.Set='Reduced',
     Model='Basic CART (tuned w/node depth)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('maxdepth=', fitcart2$bestTune[['maxdepth']]), 
     Train.RMSE=min(fitcart2$results[['RMSE']]),
-    RMSE.Test=postResample(predcart2, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predcart2, testy_red)[['RMSE']],
+    MAPE.Test=mape(predcart2, testy_red)
 )
-plot(fitcart2)
 
 ```
 
@@ -1170,15 +1208,16 @@ predcart2_full <- predict(fitcart2_full, testx_full)
 dfr[30,] = data.frame(
     Data.Set='Full',
     Model='Basic CART (tuned w/node depth)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('maxdepth=', fitcart2_full$bestTune[['maxdepth']]), 
     Train.RMSE=min(fitcart2_full$results[['RMSE']]),
-    RMSE.Test=postResample(predcart2_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predcart2_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predcart2_full, testy_full)
 )
-plot(fitcart2_full)
 
 ```
 
-### Model tree
+### Regression model tree
 
 ```{r}
 
@@ -1192,14 +1231,15 @@ fitmtree1
 predmtree1 <- predict(fitmtree1, testx_red)
 dfr[13,] <- data.frame(
     Data.Set='Reduced',
-    Model='Model tree', 
+    Model='Regression model tree', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('pruned=', fitmtree1$bestTune[['pruned']],
                              ', smoothed=', fitmtree1$bestTune[['smoothed']],
                              ', rules=', fitmtree1$bestTune[['rules']]), 
     RMSE.Train=min(fitmtree1$results[['RMSE']]),
-    RMSE.Test=postResample(predmtree1, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predmtree1, testy_red)[['RMSE']],
+    MAPE.Test=mape(predmtree1, testy_red)
 )
-plot(fitmtree1)
 
 ```
 
@@ -1215,18 +1255,19 @@ fitmtree1_full
 predmtree1_full <- predict(fitmtree1_full, testx_full)
 dfr[31,] <- data.frame(
     Data.Set='Full',
-    Model='Model tree', 
+    Model='Regression model tree', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('pruned=', fitmtree1_full$bestTune[['pruned']],
                              ', smoothed=', fitmtree1_full$bestTune[['smoothed']],
                              ', rules=', fitmtree1_full$bestTune[['rules']]), 
     RMSE.Train=min(fitmtree1_full$results[['RMSE']]),
-    RMSE.Test=postResample(predmtree1_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predmtree1_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predmtree1_full, testy_full)
 )
-plot(fitmtree1_full)
 
 ```
 
-### Model tree (rule-based)
+### Regression model tree (rule-based)
 
 ```{r}
 
@@ -1240,13 +1281,14 @@ fitmtree2
 predmtree2 <- predict(fitmtree2, testx_red)
 dfr[14,] <- data.frame(
     Data.Set='Reduced',
-    Model='Model tree (rule-based)', 
+    Model='Regression model tree (rule-based)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('pruned=', fitmtree2$bestTune[['pruned']],
                              ', smoothed=', fitmtree2$bestTune[['smoothed']]), 
     RMSE.Train=min(fitmtree2$results[['RMSE']]),
-    RMSE.Test=postResample(predmtree2, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predmtree2, testy_red)[['RMSE']],
+    MAPE.Test=mape(predmtree2, testy_red)
 )
-plot(fitmtree2)
 
 ```
 
@@ -1262,13 +1304,14 @@ fitmtree2_full
 predmtree2_full <- predict(fitmtree2_full, testx_full)
 dfr[32,] <- data.frame(
     Data.Set='Full',
-    Model='Model tree (rule-based)', 
+    Model='Regression model tree (rule-based)', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('pruned=', fitmtree2_full$bestTune[['pruned']],
                              ', smoothed=', fitmtree2_full$bestTune[['smoothed']]), 
     RMSE.Train=min(fitmtree2_full$results[['RMSE']]),
-    RMSE.Test=postResample(predmtree2_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predmtree2_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predmtree2_full, testy_full)
 )
-plot(fitmtree2_full)
 
 ```
 
@@ -1286,11 +1329,12 @@ predbag <- predict(fitbag, testx_red)
 dfr[15,] <- data.frame(
     Data.Set='Reduced',
     Model='Bagged tree', 
+    Model.Class='Tree',
     Tuning.Parameters='', 
     RMSE.Train=min(fitbag$results[['RMSE']]),
-    RMSE.Test=postResample(predbag, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predbag, testy_red)[['RMSE']],
+    MAPE.Test=mape(predbag, testy_red)
 )
-plot(fitbag)
 
 ```
 
@@ -1306,11 +1350,12 @@ predbag_full <- predict(fitbag_full, testx_full)
 dfr[33,] <- data.frame(
     Data.Set='Full',
     Model='Bagged tree', 
+    Model.Class='Tree',
     Tuning.Parameters='', 
     RMSE.Train=min(fitbag_full$results[['RMSE']]),
-    RMSE.Test=postResample(predbag_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predbag_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predbag_full, testy_full)
 )
-#plot(fitbag_full)  # no tuning parameters for this kind of model, so no plot
 
 ```
 
@@ -1328,11 +1373,12 @@ predrf <- predict(fitrf, testx_red)
 dfr[16,] <- data.frame(
     Data.Set='Reduced',
     Model='Random Forest', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('mtry=', fitrf$bestTune[['mtry']]), 
     RMSE.Train=min(fitrf$results[['RMSE']]),
-    RMSE.Test=postResample(predrf, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predrf, testy_red)[['RMSE']],
+    MAPE.Test=mape(predrf, testy_red)
 )
-plot(fitrf)
 
 ```
 
@@ -1348,17 +1394,18 @@ predrf_full <- predict(fitrf_full, testx_full)
 dfr[34,] <- data.frame(
     Data.Set='Full',
     Model='Random Forest', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('mtry=', fitrf_full$bestTune[['mtry']]), 
     RMSE.Train=min(fitrf_full$results[['RMSE']]),
-    RMSE.Test=postResample(predrf_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predrf_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predrf_full, testy_full)
 )
-plot(fitrf_full)
 
 ```
 
 ### Stochastic gradient boosted tree
 
-```{r warning=F}
+```{r warning=FALSE}
 
 # Had to set message=FALSE to prevent thousands of trace messages
 
@@ -1382,18 +1429,19 @@ predgbm <- predict(fitgbm, testx_red)
 dfr[17,] <- data.frame(
     Data.Set='Reduced',
     Model='Stochastic gradient boosted tree', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('interaction.depth=', fitgbm$bestTune[['interaction.depth']], 
                              ', n.trees=', fitgbm$bestTune[['n.trees']], 
                              ', shrinkage=', fitgbm$bestTune[['shrinkage']],
                              ', n.minobsinnode=10'), 
     Train.RMSE=min(fitgbm$results[['RMSE']]),
-    RMSE.Test=postResample(predgbm, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predgbm, testy_red)[['RMSE']],
+    MAPE.Test=mape(predgbm, testy_red)
 )
-plot(fitgbm)
 
 ```
 
-```{r warning=F}
+```{r warning=FALSE}
 
 # Had to set message=FALSE to prevent thousands of trace messages
 
@@ -1417,14 +1465,15 @@ predgbm_full <- predict(fitgbm_full, testx_full)
 dfr[35,] <- data.frame(
     Data.Set='Full',
     Model='Stochastic gradient boosted tree', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('interaction.depth=', fitgbm_full$bestTune[['interaction.depth']], 
                              ', n.trees=', fitgbm_full$bestTune[['n.trees']], 
                              ', shrinkage=', fitgbm_full$bestTune[['shrinkage']],
                              ', n.minobsinnode=10'), 
     Train.RMSE=min(fitgbm_full$results[['RMSE']]),
-    RMSE.Test=postResample(predgbm_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predgbm_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predgbm_full, testy_full)
 )
-plot(fitgbm_full)
 
 ```
 
@@ -1443,12 +1492,13 @@ predcub <- predict(fitcub, testx_red)
 dfr[18,] <- data.frame(
     Data.Set='Reduced',
     Model='Cubist', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('committees=', fitcub$bestTune[['committees']], 
                              ', neighbors=', fitcub$bestTune[['neighbors']]), 
     Train.RMSE=min(fitcub$results[['RMSE']]),
-    RMSE.Test=postResample(predcub, testy_red)[['RMSE']]
+    RMSE.Test=postResample(predcub, testy_red)[['RMSE']],
+    MAPE.Test=mape(predcub, testy_red)
 )
-plot(fitcub)
 
 ```
 
@@ -1465,23 +1515,28 @@ predcub_full <- predict(fitcub_full, testx_full)
 dfr[36,] <- data.frame(
     Data.Set='Full',
     Model='Cubist', 
+    Model.Class='Tree',
     Tuning.Parameters=paste0('committees=', fitcub_full$bestTune[['committees']], 
                              ', neighbors=', fitcub_full$bestTune[['neighbors']]), 
     Train.RMSE=min(fitcub_full$results[['RMSE']]),
-    RMSE.Test=postResample(predcub_full, testy_full)[['RMSE']]
+    RMSE.Test=postResample(predcub_full, testy_full)[['RMSE']],
+    MAPE.Test=mape(predcub_full, testy_full)
 )
-plot(fitcub_full)
 
 ```
 
+## Modeling Results
 
+Model performance can be compared using a variety of metrics. One metric commonly used is root mean square error (RMSE), which measures the difference between actual outcome values (pH in this case) and those predicted by the model. RMSE units are in the same units as the outcome variable, pH, making it easy to compare to the original variable.
+
+Another useful metric is the mean absolute percentage error (MAPE), which measures the percentage difference between predicted and actual values of the outcome. Below is a summary of RMSE and MAPE values, along with the tuning parameters of the best-performing models:
 
 ```{r}
 
 # Results table
 dfr %>%
-    arrange(RMSE.Test) %>%
-    select(Model, Data.Set, Tuning.Parameters, RMSE.Train, RMSE.Test) %>%
+    arrange(MAPE.Test) %>%
+    select(Model, Data.Set, Tuning.Parameters, RMSE.Train, RMSE.Test, MAPE.Test) %>%
     flextable() %>%
     width(width = 2) %>%
     fontsize(size = 10) %>%
@@ -1491,26 +1546,62 @@ dfr %>%
 
 ```
 
-
-
 ```{r fig.height=6}
 
 dfr %>%
-    ggplot(aes(x=reorder(Model, desc(RMSE.Test)), y=RMSE.Test, fill=Data.Set)) +
+    ggplot(aes(x=reorder(Model, desc(MAPE.Test)), y=MAPE.Test, fill=Data.Set)) +
     geom_bar(stat='identity', position='dodge', width=0.75) +
     coord_flip() +
     xlab('') +
-    ylab('RMSE (Test set)') +
+    ylab('MAPE (Test set)') +
     scale_fill_manual(values=c('#c03333', '#808080')) +
     ggtitle('Modeling Results')
 
 ```
 
+Our preliminary runs show that tree-based models were the best performers by a significant margin. Nonlinear regression-based models outperformed those that are linear based, but were still outclassed by the tree-based models. The Cubist and random forest models were the top performers, followed by the stochastic gradient boosted tree and regression model tree. It is not surprising that the tree-based models performed better when fed the full data set, as there was a richer feature set to inform the outcome. It was, however, surprising that the test data set outperformed the training set; typically models perform slighly worse at data they haven't encountered before. This was the case with the linear and nonlinear regression-based models.
+
+While our modeling yielded very good results by the top performers, we'll take a closer look at the top two models to see if there are ways to improve it. As indicated above, the top two performers were the Cubist model run against the full data set with 100 committees and five neighbors, and the random forest model with 27 predictors, also run against the full data set.
 
 
 ```{r}
 
-
+# plot(fitlm1)  # no tuning parameters, so no plot
+plot(fitlm2)
+#plot(fitlm1_full)  # no tuning parameters, no plot
+plot(fitlm2_full)
+plot(fitrlm)
+plot(fitrlm_full)
+plot(fitpls)
+plot(fitpls_full)
+plot(fitridge)
+plot(fitridge_full)
+plot(fitlasso)
+plot(fitlasso_full)
+plot(fitknn)
+plot(fitknn_full)
+plot(fitmars)
+plot(fitmars_full)
+plot(fitsvm)
+plot(fitsvm_full)
+plot(fitnnet)
+plot(fitnnet_full)
+plot(fitcart1)
+plot(fitcart1_full)
+plot(fitcart2)
+plot(fitcart2_full)
+plot(fitmtree1)
+plot(fitmtree1_full)
+plot(fitmtree2)
+plot(fitmtree2_full)
+#plot(fitbag)  # no tuning parameters, so no plot
+#plot(fitbag_full)  # no tuning parameters, so no plot
+plot(fitrf)
+plot(fitrf_full)
+plot(fitgbm)
+plot(fitgbm_full)
+plot(fitcub)
+plot(fitcub_full)
 
 ```
 
@@ -1518,7 +1609,16 @@ dfr %>%
 
 ```{r}
 
+# todo:
 
+# use mape instead of rmse?
+# show graph of average models by class
+# try to tweak the top model(s) to get better mape
+# varImp of the top model(s)
+# plots of the top model(s)
+# model writeups
+# prepare eval data
+# predict eval data
 
 ```
 
