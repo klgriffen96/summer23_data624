@@ -710,7 +710,7 @@ registerDoParallel(cl)
 tstart <- Sys.time()
 set.seed(77)
 fitlm1 <- train(x=trainx_red, y=trainy_red, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlm1
 predlm1 <- predict(fitlm1, testx_red)
 dfr[1,] <- data.frame(
@@ -729,7 +729,7 @@ stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max num
 tstart <- Sys.time()
 set.seed(77)
 fitlm2 <- train(x=trainx_red, y=trainy_red, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlm2
 predlm2 <- predict(fitlm2, testx_red)
 dfr[2,] <- data.frame(
@@ -753,7 +753,7 @@ dfr[2,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitlm1_full <- train(x=trainx_full, y=trainy_full, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlm1_full
 predlm1_full <- predict(fitlm1_full, testx_full)
 dfr[19,] <- data.frame(
@@ -772,7 +772,7 @@ stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max num
 tstart <- Sys.time()
 set.seed(77)
 fitlm2_full <- train(x=trainx_full, y=trainy_full, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlm2_full
 predlm2_full <- predict(fitlm2_full, testx_full)
 dfr[20,] <- data.frame(
@@ -798,7 +798,7 @@ dfr[20,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitrlm <- train(x=trainx_red, y=trainy_red, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitrlm
 predrlm <- predict(fitrlm, testx_red)
 dfr[3,] <- data.frame(
@@ -822,7 +822,7 @@ dfr[3,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitrlm_full <- train(x=trainx_full, y=trainy_full, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitrlm_full
 predrlm_full <- predict(fitrlm_full, testx_full)
 dfr[21,] <- data.frame(
@@ -848,7 +848,7 @@ dfr[21,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitpls <- train(x=trainx_red, y=trainy_red, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_red) / 2)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitpls
 predpls <- predict(fitpls, testx_red)
 dfr[4,] <- data.frame(
@@ -872,7 +872,7 @@ dfr[4,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitpls_full <- train(x=trainx_full, y=trainy_full, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_full) / 2)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitpls_full
 predpls_full <- predict(fitpls_full, testx_full)
 dfr[22,] <- data.frame(
@@ -899,7 +899,7 @@ tstart <- Sys.time()
 set.seed(77)
 ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
 fitridge <- train(x=trainx_red, y=trainy_red, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitridge
 predridge <- predict(fitridge, testx_red)
 dfr[5,] <- data.frame(
@@ -924,7 +924,7 @@ tstart <- Sys.time()
 set.seed(77)
 ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
 fitridge_full <- train(x=trainx_full, y=trainy_full, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitridge_full
 predridge_full <- predict(fitridge_full, testx_full)
 dfr[23,] <- data.frame(
@@ -951,7 +951,7 @@ enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=2
 tstart <- Sys.time()
 set.seed(77)
 fitlasso <- train(x=trainx_red, y=trainy_red, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlasso
 predlasso <- predict(fitlasso, testx_red)
 dfr[6,] <- data.frame(
@@ -976,7 +976,7 @@ enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=2
 tstart <- Sys.time()
 set.seed(77)
 fitlasso_full <- train(x=trainx_full, y=trainy_full, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitlasso_full
 predlasso_full <- predict(fitlasso_full, testx_full)
 dfr[24,] <- data.frame(
@@ -1002,7 +1002,7 @@ dfr[24,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitknn <- train(x=trainx_red, y=trainy_red, method='knn', preProc=c("center", "scale"), tuneLength=10)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitknn
 predknn <- predict(fitknn, testx_red)
 dfr[7,] <- data.frame(
@@ -1025,7 +1025,7 @@ dfr[7,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitknn_full <- train(x=trainx_full, y=trainy_full, method='knn', preProc=c("center", "scale"), tuneLength=10)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitknn_full
 predknn_full <- predict(fitknn_full, testx_full)
 dfr[25,] <- data.frame(
@@ -1053,7 +1053,7 @@ marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
 tstart <- Sys.time()
 set.seed(77)
 fitmars <- train(x=trainx_red, y=trainy_red, method='earth', tuneGrid=marsGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmars
 predmars <- predict(fitmars, testx_red)
 dfr[8,] <- data.frame(
@@ -1078,7 +1078,7 @@ marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
 tstart <- Sys.time()
 set.seed(77)
 fitmars_full <- train(x=trainx_full, y=trainy_full, method='earth', tuneGrid=marsGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmars_full
 predmars_full <- predict(fitmars_full, testx_full)
 dfr[26,] <- data.frame(
@@ -1104,7 +1104,7 @@ dfr[26,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitsvm <- train(x=trainx_red, y=trainy_red, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitsvm
 predsvm <- predict(fitsvm, testx_red)
 dfr[9,] <- data.frame(
@@ -1128,7 +1128,7 @@ dfr[9,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitsvm_full <- train(x=trainx_full, y=trainy_full, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitsvm_full
 predsvm_full <- predict(fitsvm_full, testx_full)
 dfr[27,] <- data.frame(
@@ -1156,7 +1156,7 @@ tstart <- Sys.time()
 set.seed(77)
 fitnnet <- train(x=trainx_red, y=trainy_red, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
              linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitnnet
 prednnet <- predict(fitnnet, testx_red)
 dfr[10,] <- data.frame(
@@ -1182,7 +1182,7 @@ tstart <- Sys.time()
 set.seed(77)
 fitnnet_full <- train(x=trainx_full, y=trainy_full, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
              linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitnnet_full
 prednnet_full <- predict(fitnnet_full, testx_full)
 dfr[28,] <- data.frame(
@@ -1208,7 +1208,7 @@ dfr[28,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitcart1 <- train(trainx_red, trainy_red, method='rpart', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcart1
 predcart1 <- predict(fitcart1, testx_red)
 dfr[11,] <- data.frame(
@@ -1232,7 +1232,7 @@ dfr[11,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitcart1_full <- train(trainx_full, trainy_full, method='rpart', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcart1_full
 predcart1_full <- predict(fitcart1_full, testx_full)
 dfr[29,] <- data.frame(
@@ -1258,7 +1258,7 @@ dfr[29,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitcart2 <- train(trainx_red, trainy_red, method='rpart2', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcart2
 predcart2 <- predict(fitcart2, testx_red)
 dfr[12,] = data.frame(
@@ -1282,7 +1282,7 @@ dfr[12,] = data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitcart2_full <- train(trainx_full, trainy_full, method='rpart2', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcart2_full
 predcart2_full <- predict(fitcart2_full, testx_full)
 dfr[30,] = data.frame(
@@ -1309,7 +1309,7 @@ mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rul
 tstart <- Sys.time()
 set.seed(77)
 fitmtree1 <- train(trainx_red, trainy_red, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmtree1
 predmtree1 <- predict(fitmtree1, testx_red)
 dfr[13,] <- data.frame(
@@ -1336,7 +1336,7 @@ mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rul
 tstart <- Sys.time()
 set.seed(77)
 fitmtree1_full <- train(trainx_full, trainy_full, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmtree1_full
 predmtree1_full <- predict(fitmtree1_full, testx_full)
 dfr[31,] <- data.frame(
@@ -1365,7 +1365,7 @@ mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
 tstart <- Sys.time()
 set.seed(77)
 fitmtree2 <- train(trainx_red, trainy_red, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmtree2
 predmtree2 <- predict(fitmtree2, testx_red)
 dfr[14,] <- data.frame(
@@ -1391,7 +1391,7 @@ mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
 tstart <- Sys.time()
 set.seed(77)
 fitmtree2_full <- train(trainx_full, trainy_full, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitmtree2_full
 predmtree2_full <- predict(fitmtree2_full, testx_full)
 dfr[32,] <- data.frame(
@@ -1418,7 +1418,7 @@ dfr[32,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitbag <- train(trainx_red, trainy_red, method='treebag', trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitbag
 predbag <- predict(fitbag, testx_red)
 dfr[15,] <- data.frame(
@@ -1442,7 +1442,7 @@ dfr[15,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitbag_full <- train(trainx_full, trainy_full, method='treebag', trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitbag_full
 predbag_full <- predict(fitbag_full, testx_full)
 dfr[33,] <- data.frame(
@@ -1468,7 +1468,7 @@ dfr[33,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitrf <- train(trainx_red, trainy_red, method='rf', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitrf
 predrf <- predict(fitrf, testx_red)
 dfr[16,] <- data.frame(
@@ -1492,7 +1492,7 @@ dfr[16,] <- data.frame(
 tstart <- Sys.time()
 set.seed(77)
 fitrf_full <- train(trainx_full, trainy_full, method='rf', tuneLength=10, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitrf_full
 predrf_full <- predict(fitrf_full, testx_full)
 dfr[34,] <- data.frame(
@@ -1524,7 +1524,7 @@ gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
 tstart <- Sys.time()
 set.seed(77)
 fitgbm <- train(trainx_red, trainy_red, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 
 ```
 
@@ -1563,7 +1563,7 @@ gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
 tstart <- Sys.time()
 set.seed(77)
 fitgbm_full <- train(trainx_full, trainy_full, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 
 ```
 
@@ -1599,7 +1599,7 @@ cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbor
 tstart <- Sys.time()
 set.seed(77)
 fitcub <- train(trainx_red, trainy_red, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcub
 predcub <- predict(fitcub, testx_red)
 dfr[18,] <- data.frame(
@@ -1625,7 +1625,7 @@ cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbor
 tstart <- Sys.time()
 set.seed(77)
 fitcub_full <- train(trainx_full, trainy_full, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
-telapsed <- as.numeric(Sys.time() - tstart)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcub_full
 predcub_full <- predict(fitcub_full, testx_full)
 dfr[36,] <- data.frame(
