@@ -26,6 +26,12 @@ library(flextable)
 library(AppliedPredictiveModeling)
 library(DMwR2)
 library(fastDummies)
+library(rpart)
+library(party)
+library(RWeka)
+library(ipred)
+library(gbm)
+library(Cubist)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -294,7 +300,7 @@ The sign of the skewness value indicates in which direction the distribution is 
 
 The following plot quantitatively enumerates the skewness of each variable, ordered by how heavily skewed the variable is.
 
-```{r}
+```{r fig.width=10, fig.height=6}
 
 # Look at skewness quantitatively
 # As a general rule of thumb:
@@ -516,6 +522,12 @@ train_rows <- createDataPartition(dfm_full$PH, p=0.8, list=F)
 dfm_full_train <- dfm_full[train_rows,]
 dfm_full_test <- dfm_full[-train_rows,]
 
+# Separate outcome from predictors
+trainx_full <- dfm_full_train[,2:ncol(dfm_full_train)]
+trainy_full <- dfm_full_train[,1]
+testx_full <- dfm_full_test[,2:ncol(dfm_full_test)]
+testy_full <- dfm_full_test[,1]
+
 # Generate a pretty table for the report
 data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(dfm_full_test))) %>%
     flextable() %>%
@@ -630,6 +642,14 @@ train_rows <- createDataPartition(dfm_red$PH, p=0.8, list=F)
 dfm_red_train <- dfm_red[train_rows,]
 dfm_red_test <- dfm_red[-train_rows,]
 
+# Separate outcome from predictors
+trainx_red <- dfm_red_train[,2:ncol(dfm_red_train)]
+trainy_red <- dfm_red_train[,1]
+
+# Separate outcome from predictors
+testx_red <- dfm_red_test[,2:ncol(dfm_red_test)]
+testy_red <- dfm_red_test[,1]
+
 # Generate a pretty table for the report
 data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_red_train), nrow(dfm_red_test))) %>%
     flextable() %>%
@@ -645,7 +665,848 @@ The table above shows that the test set contains 511 observations, far exceeding
 
 ## Modeling
 
-Now that we have a full and reduced set of data, along with training and test sets within those two sets, we can begin modeling.
+Now that we have a full and reduced set of data--and training and test sets within those two sets--we can begin modeling. We'll start by performing linear regression-based modeling on the reduced data set.
+
+```{r}
+
+# Create a data frame to store the results
+dfr <- data.frame(matrix(nrow=0, ncol=5))
+colnames(dfr) <- c('Data.Set', 'Model', 'Tuning.Parameters', 'RMSE.Train', 'RMSE.Test')
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+```
+
+### Linear regression
+
+```{r}
+
+# Reduced model
+
+# Linear model
+set.seed(77)
+fitlm1 <- train(x=trainx_red, y=trainy_red, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm1
+predlm1 <- predict(fitlm1, testx_red)
+dfr[1,] <- data.frame(
+    Data.Set='Reduced', 
+    Model='Linear model', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitlm1$results[['RMSE']]),
+    RMSE.Test=postResample(predlm1, testy_red)[['RMSE']]
+)
+# plot(fitlm1)  # no tuning parameters, so no plot
+
+# Stepwise linear model using MASS package/caret
+stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
+set.seed(77)
+fitlm2 <- train(x=trainx_red, y=trainy_red, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm2
+predlm2 <- predict(fitlm2, testx_red)
+dfr[2,] <- data.frame(
+    Data.Set='Reduced', 
+    Model='Stepwise linear model', 
+    Tuning.Parameters=paste0('nvmax=', fitlm2$bestTune[['nvmax']]), 
+    RMSE.Train=min(fitlm2$results[['RMSE']]),
+    RMSE.Test=postResample(predlm2, testy_red)[['RMSE']]
+)
+plot(fitlm2)
+
+```
+
+```{r}
+
+# Full model
+
+# Linear model
+set.seed(77)
+fitlm1_full <- train(x=trainx_full, y=trainy_full, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm1_full
+predlm1_full <- predict(fitlm1_full, testx_full)
+dfr[19,] <- data.frame(
+    Data.Set='Full', 
+    Model='Linear model', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitlm1_full$results[['RMSE']]),
+    RMSE.Test=postResample(predlm1_full, testy_full)[['RMSE']]
+)
+plot(fitlm1_full)
+
+# Stepwise linear model using MASS package/caret
+stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
+set.seed(77)
+fitlm2_full <- train(x=trainx_full, y=trainy_full, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
+fitlm2_full
+predlm2_full <- predict(fitlm2_full, testx_full)
+dfr[20,] <- data.frame(
+    Data.Set='Full', 
+    Model='Stepwise linear model', 
+    Tuning.Parameters=paste0('nvmax=', fitlm2_full$bestTune[['nvmax']]), 
+    RMSE.Train=min(fitlm2_full$results[['RMSE']]),
+    RMSE.Test=postResample(predlm2_full, testy_full)[['RMSE']]
+)
+plot(fitlm2_full)
+
+```
+
+### Robust linear regression
+
+```{r}
+
+# Reduced model
+
+# Robust linear regression
+set.seed(77)
+fitrlm <- train(x=trainx_red, y=trainy_red, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
+fitrlm
+predrlm <- predict(fitrlm, testx_red)
+dfr[3,] <- data.frame(
+    Data.Set='Reduced', 
+    Model='Robust linear regression', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitrlm$results[['RMSE']]),
+    RMSE.Test=postResample(predrlm, testy_red)[['RMSE']]
+)
+plot(fitrlm)
+
+```
+
+```{r}
+
+# Full model
+
+# Robust linear regression
+set.seed(77)
+fitrlm_full <- train(x=trainx_full, y=trainy_full, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
+fitrlm_full
+predrlm_full <- predict(fitrlm_full, testx_full)
+dfr[21,] <- data.frame(
+    Data.Set='Full', 
+    Model='Robust linear regression', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitrlm_full$results[['RMSE']]),
+    RMSE.Test=postResample(predrlm_full, testy_full)[['RMSE']]
+)
+plot(fitrlm_full)
+
+```
+
+### Partial least squares
+
+```{r}
+
+# Reduced model
+
+# PLS
+set.seed(77)
+fitpls <- train(x=trainx_red, y=trainy_red, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_red) / 2)
+fitpls
+predpls <- predict(fitpls, testx_red)
+dfr[4,] <- data.frame(
+    Data.Set='Reduced', 
+    Model='Partial least squares', 
+    Tuning.Parameters=paste0('ncomp=', fitpls$bestTune), 
+    RMSE.Train=min(fitpls$results[['RMSE']]),
+    RMSE.Test=postResample(predpls, testy_red)[['RMSE']]
+)
+plot(fitpls)
+
+```
+
+```{r}
+
+# Full model
+
+# PLS
+set.seed(77)
+fitpls_full <- train(x=trainx_full, y=trainy_full, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_full) / 2)
+fitpls_full
+predpls_full <- predict(fitpls_full, testx_full)
+dfr[22,] <- data.frame(
+    Data.Set='Full', 
+    Model='Partial least squares', 
+    Tuning.Parameters=paste0('ncomp=', fitpls_full$bestTune), 
+    RMSE.Train=min(fitpls_full$results[['RMSE']]),
+    RMSE.Test=postResample(predpls_full, testy_full)[['RMSE']]
+)
+plot(fitpls_full)
+
+```
+
+### Ridge regression
+
+```{r}
+
+# Reduced model
+
+# Ridge regression
+set.seed(77)
+ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
+fitridge <- train(x=trainx_red, y=trainy_red, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+fitridge
+predridge <- predict(fitridge, testx_red)
+dfr[5,] <- data.frame(
+    Data.Set='Reduced', 
+    Model='Ridge regression', 
+    Tuning.Parameters=paste0('labmda=', round(fitridge$bestTune[['lambda']], 4)), 
+    RMSE.Train=min(fitridge$results[['RMSE']]),
+    RMSE.Test=postResample(predridge, testy_red)[['RMSE']]
+)
+plot(fitridge)
+
+```
+
+```{r}
+
+# Full model
+
+# Ridge regression
+set.seed(77)
+ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
+fitridge_full <- train(x=trainx_full, y=trainy_full, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+fitridge_full
+predridge_full <- predict(fitridge_full, testx_full)
+dfr[23,] <- data.frame(
+    Data.Set='Full', 
+    Model='Ridge regression', 
+    Tuning.Parameters=paste0('labmda=', round(fitridge_full$bestTune[['lambda']], 4)), 
+    RMSE.Train=min(fitridge_full$results[['RMSE']]),
+    RMSE.Test=postResample(predridge_full, testy_full)[['RMSE']]
+)
+plot(fitridge_full)
+
+```
+
+### Lasso regression
+
+```{r}
+
+# Reduced model
+
+# Lasso regression
+enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+set.seed(77)
+fitlasso <- train(x=trainx_red, y=trainy_red, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+fitlasso
+predlasso <- predict(fitlasso, testx_red)
+dfr[6,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Lasso (enlastic net)', 
+    Tuning.Parameters=paste0('lambda=', fitlasso$bestTune[['lambda']], ', fraction=', fitlasso$bestTune[['fraction']]), 
+    RMSE.Train=min(fitlasso$results[['RMSE']]),
+    RMSE.Test=postResample(predlasso, testy_red)[['RMSE']]
+)
+plot(fitlasso)
+
+```
+
+```{r}
+
+# Full model
+
+# Lasso regression
+enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+set.seed(77)
+fitlasso_full <- train(x=trainx_full, y=trainy_full, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+fitlasso_full
+predlasso_full <- predict(fitlasso_full, testx_full)
+dfr[24,] <- data.frame(
+    Data.Set='Full',
+    Model='Lasso (enlastic net)', 
+    Tuning.Parameters=paste0('lambda=', fitlasso_full$bestTune[['lambda']], ', fraction=', fitlasso_full$bestTune[['fraction']]), 
+    RMSE.Train=min(fitlasso_full$results[['RMSE']]),
+    RMSE.Test=postResample(predlasso_full, testy_full)[['RMSE']]
+)
+plot(fitlasso_full)
+
+```
+
+### K nearest neighbors
+
+```{r}
+
+# Reduced model
+
+# KNN model
+set.seed(77)
+fitknn <- train(x=trainx_red, y=trainy_red, method='knn', preProc=c("center", "scale"), tuneLength=10)
+fitknn
+predknn <- predict(fitknn, testx_red)
+dfr[7,] <- data.frame(
+    Data.Set='Reduced',
+    Model='knn', 
+    Tuning.Parameters=paste0('k=', fitknn$bestTune[['k']]), 
+    RMSE.Train=min(fitknn$results[['RMSE']]),
+    RMSE.Test=postResample(predknn, testy_red)[['RMSE']]
+)
+plot(fitknn)
+
+```
+
+```{r}
+
+# Full model
+
+# KNN model
+set.seed(77)
+fitknn_full <- train(x=trainx_full, y=trainy_full, method='knn', preProc=c("center", "scale"), tuneLength=10)
+fitknn_full
+predknn_full <- predict(fitknn_full, testx_full)
+dfr[25,] <- data.frame(
+    Data.Set='Full',
+    Model='knn', 
+    Tuning.Parameters=paste0('k=', fitknn_full$bestTune[['k']]), 
+    RMSE.Train=min(fitknn_full$results[['RMSE']]),
+    RMSE.Test=postResample(predknn_full, testy_full)[['RMSE']]
+)
+plot(fitknn_full)
+
+```
+
+### Multivariate adaptive regression splines
+
+```{r}
+
+# Reduced model
+
+# MARS model
+marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+set.seed(77)
+fitmars <- train(x=trainx_red, y=trainy_red, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+fitmars
+predmars <- predict(fitmars, testx_red)
+dfr[8,] <- data.frame(
+    Data.Set='Reduced',
+    Model='MARS', 
+    Tuning.Parameters=paste0('degree=', fitmars$bestTune[['degree']], ', nprune=', fitmars$bestTune[['nprune']]), 
+    RMSE.Train=min(fitmars$results[['RMSE']]),
+    RMSE.Test=postResample(predmars, testy_red)[['RMSE']]
+)
+plot(fitmars)
+
+```
+
+```{r}
+
+# Full model
+
+# MARS model
+marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+set.seed(77)
+fitmars_full <- train(x=trainx_full, y=trainy_full, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+fitmars_full
+predmars_full <- predict(fitmars_full, testx_full)
+dfr[26,] <- data.frame(
+    Data.Set='Full',
+    Model='MARS', 
+    Tuning.Parameters=paste0('degree=', fitmars_full$bestTune[['degree']], ', nprune=', fitmars_full$bestTune[['nprune']]), 
+    RMSE.Train=min(fitmars_full$results[['RMSE']]),
+    RMSE.Test=postResample(predmars_full, testy_full)[['RMSE']]
+)
+plot(fitmars_full)
+
+```
+
+### Support vector machine
+
+```{r}
+
+# Reduced model
+
+# SVM model
+set.seed(77)
+fitsvm <- train(x=trainx_red, y=trainy_red, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+fitsvm
+predsvm <- predict(fitsvm, testx_red)
+dfr[9,] <- data.frame(
+    Data.Set='Reduced',
+    Model='SVM', 
+    Tuning.Parameters=paste0('C=', fitsvm$bestTune[['C']], ', sigma=', round(fitsvm$bestTune[['sigma']], 3)), 
+    RMSE.Train=min(fitsvm$results[['RMSE']]),
+    RMSE.Test=postResample(predsvm, testy_red)[['RMSE']]
+)
+plot(fitsvm)
+
+```
+
+```{r}
+
+# Full model
+
+# SVM model
+set.seed(77)
+fitsvm_full <- train(x=trainx_full, y=trainy_full, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+fitsvm_full
+predsvm_full <- predict(fitsvm_full, testx_full)
+dfr[27,] <- data.frame(
+    Data.Set='Full',
+    Model='SVM', 
+    Tuning.Parameters=paste0('C=', fitsvm_full$bestTune[['C']], ', sigma=', round(fitsvm_full$bestTune[['sigma']], 3)), 
+    RMSE.Train=min(fitsvm_full$results[['RMSE']]),
+    RMSE.Test=postResample(predsvm_full, testy_full)[['RMSE']]
+)
+plot(fitsvm_full)
+
+```
+
+### Neural net
+
+```{r}
+
+# Reduced model
+
+# nnet model using model averaging
+nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=F)  # set tuning parameters
+set.seed(77)
+fitnnet <- train(x=trainx_red, y=trainy_red, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
+             linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
+fitnnet
+prednnet <- predict(fitnnet, testx_red)
+dfr[10,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Neural net', 
+    Tuning.Parameters=paste0('decay=', fitnnet$bestTune[['decay']], ', size=', fitnnet$bestTune[['size']], ', bag=False'), 
+    RMSE.Train=min(fitnnet$results[['RMSE']]),
+    RMSE.Test=postResample(prednnet, testy_red)[['RMSE']]
+)
+plot(fitnnet)
+
+```
+
+```{r}
+
+# Full model
+
+# nnet model using model averaging
+nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=F)  # set tuning parameters
+set.seed(77)
+fitnnet_full <- train(x=trainx_full, y=trainy_full, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
+             linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
+fitnnet_full
+prednnet_full <- predict(fitnnet_full, testx_full)
+dfr[28,] <- data.frame(
+    Data.Set='Full',
+    Model='Neural net', 
+    Tuning.Parameters=paste0('decay=', fitnnet_full$bestTune[['decay']], ', size=', fitnnet_full$bestTune[['size']], ', bag=False'), 
+    RMSE.Train=min(fitnnet_full$results[['RMSE']]),
+    RMSE.Test=postResample(prednnet_full, testy_full)[['RMSE']]
+)
+plot(fitnnet_full)
+
+```
+
+### Basic CART (tuned with complexity parameter)
+
+```{r}
+
+# Reduced model
+
+# Basic regression tree
+set.seed(77)
+fitcart1 <- train(trainx_red, trainy_red, method='rpart', tuneLength=10, trControl=ctrl)
+fitcart1
+predcart1 <- predict(fitcart1, testx_red)
+dfr[11,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Basic CART (tuned w/complexity parameter)', 
+    Tuning.Parameters=paste0('cp=', round(fitcart1$bestTune[['cp']], 4)), 
+    Train.RMSE=min(fitcart1$results[['RMSE']]),
+    RMSE.Test=postResample(predcart1, testy_red)[['RMSE']]
+)
+plot(fitcart1)
+
+```
+
+```{r}
+
+# Full model
+
+# Basic regression tree
+set.seed(77)
+fitcart1_full <- train(trainx_full, trainy_full, method='rpart', tuneLength=10, trControl=ctrl)
+fitcart1_full
+predcart1_full <- predict(fitcart1_full, testx_full)
+dfr[29,] <- data.frame(
+    Data.Set='Full',
+    Model='Basic CART (tuned w/complexity parameter)', 
+    Tuning.Parameters=paste0('cp=', round(fitcart1_full$bestTune[['cp']], 4)), 
+    Train.RMSE=min(fitcart1_full$results[['RMSE']]),
+    RMSE.Test=postResample(predcart1_full, testy_full)[['RMSE']]
+)
+plot(fitcart1_full)
+
+```
+
+### Basic CART (tuned with node depth)
+
+```{r}
+
+# Reduced model
+
+# Basic CART model - tuned using node depth
+fitcart2 <- train(trainx_red, trainy_red, method='rpart2', tuneLength=10, trControl=ctrl)
+fitcart2
+predcart2 <- predict(fitcart2, testx_red)
+dfr[12,] = data.frame(
+    Data.Set='Reduced',
+    Model='Basic CART (tuned w/node depth)', 
+    Tuning.Parameters=paste0('maxdepth=', fitcart2$bestTune[['maxdepth']]), 
+    Train.RMSE=min(fitcart2$results[['RMSE']]),
+    RMSE.Test=postResample(predcart2, testy_red)[['RMSE']]
+)
+plot(fitcart2)
+
+```
+
+```{r}
+
+# Full model
+
+# Basic CART model - tuned using node depth
+fitcart2_full <- train(trainx_full, trainy_full, method='rpart2', tuneLength=10, trControl=ctrl)
+fitcart2_full
+predcart2_full <- predict(fitcart2_full, testx_full)
+dfr[30,] = data.frame(
+    Data.Set='Full',
+    Model='Basic CART (tuned w/node depth)', 
+    Tuning.Parameters=paste0('maxdepth=', fitcart2_full$bestTune[['maxdepth']]), 
+    Train.RMSE=min(fitcart2_full$results[['RMSE']]),
+    RMSE.Test=postResample(predcart2_full, testy_full)[['RMSE']]
+)
+plot(fitcart2_full)
+
+```
+
+### Model tree
+
+```{r}
+
+# Reduced model
+
+# Model tree
+mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rules=c('Yes', 'No'))
+set.seed(77)
+fitmtree1 <- train(trainx_red, trainy_red, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
+fitmtree1
+predmtree1 <- predict(fitmtree1, testx_red)
+dfr[13,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Model tree', 
+    Tuning.Parameters=paste0('pruned=', fitmtree1$bestTune[['pruned']],
+                             ', smoothed=', fitmtree1$bestTune[['smoothed']],
+                             ', rules=', fitmtree1$bestTune[['rules']]), 
+    RMSE.Train=min(fitmtree1$results[['RMSE']]),
+    RMSE.Test=postResample(predmtree1, testy_red)[['RMSE']]
+)
+plot(fitmtree1)
+
+```
+
+```{r}
+
+# Full model
+
+# Model tree
+mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rules=c('Yes', 'No'))
+set.seed(77)
+fitmtree1_full <- train(trainx_full, trainy_full, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
+fitmtree1_full
+predmtree1_full <- predict(fitmtree1_full, testx_full)
+dfr[31,] <- data.frame(
+    Data.Set='Full',
+    Model='Model tree', 
+    Tuning.Parameters=paste0('pruned=', fitmtree1_full$bestTune[['pruned']],
+                             ', smoothed=', fitmtree1_full$bestTune[['smoothed']],
+                             ', rules=', fitmtree1_full$bestTune[['rules']]), 
+    RMSE.Train=min(fitmtree1_full$results[['RMSE']]),
+    RMSE.Test=postResample(predmtree1_full, testy_full)[['RMSE']]
+)
+plot(fitmtree1_full)
+
+```
+
+### Model tree (rule-based)
+
+```{r}
+
+# Reduced model
+
+# Model tree (rule-based)
+mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
+set.seed(77)
+fitmtree2 <- train(trainx_red, trainy_red, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
+fitmtree2
+predmtree2 <- predict(fitmtree2, testx_red)
+dfr[14,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Model tree (rule-based)', 
+    Tuning.Parameters=paste0('pruned=', fitmtree2$bestTune[['pruned']],
+                             ', smoothed=', fitmtree2$bestTune[['smoothed']]), 
+    RMSE.Train=min(fitmtree2$results[['RMSE']]),
+    RMSE.Test=postResample(predmtree2, testy_red)[['RMSE']]
+)
+plot(fitmtree2)
+
+```
+
+```{r}
+
+# Full model
+
+# Model tree (rule-based)
+mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
+set.seed(77)
+fitmtree2_full <- train(trainx_full, trainy_full, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
+fitmtree2_full
+predmtree2_full <- predict(fitmtree2_full, testx_full)
+dfr[32,] <- data.frame(
+    Data.Set='Full',
+    Model='Model tree (rule-based)', 
+    Tuning.Parameters=paste0('pruned=', fitmtree2_full$bestTune[['pruned']],
+                             ', smoothed=', fitmtree2_full$bestTune[['smoothed']]), 
+    RMSE.Train=min(fitmtree2_full$results[['RMSE']]),
+    RMSE.Test=postResample(predmtree2_full, testy_full)[['RMSE']]
+)
+plot(fitmtree2_full)
+
+```
+
+### Bagged tree
+
+```{r}
+
+# Reduced model
+
+# Bagged tree
+set.seed(77)
+fitbag <- train(trainx_red, trainy_red, method='treebag', trControl=ctrl)
+fitbag
+predbag <- predict(fitbag, testx_red)
+dfr[15,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Bagged tree', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitbag$results[['RMSE']]),
+    RMSE.Test=postResample(predbag, testy_red)[['RMSE']]
+)
+plot(fitbag)
+
+```
+
+```{r}
+
+# Full model
+
+# Bagged tree
+set.seed(77)
+fitbag_full <- train(trainx_full, trainy_full, method='treebag', trControl=ctrl)
+fitbag_full
+predbag_full <- predict(fitbag_full, testx_full)
+dfr[33,] <- data.frame(
+    Data.Set='Full',
+    Model='Bagged tree', 
+    Tuning.Parameters='', 
+    RMSE.Train=min(fitbag_full$results[['RMSE']]),
+    RMSE.Test=postResample(predbag_full, testy_full)[['RMSE']]
+)
+#plot(fitbag_full)  # no tuning parameters for this kind of model, so no plot
+
+```
+
+### Random Forest
+
+```{r}
+
+# Reduced model
+
+# Random Forest
+set.seed(77)
+fitrf <- train(trainx_red, trainy_red, method='rf', tuneLength=10, trControl=ctrl)
+fitrf
+predrf <- predict(fitrf, testx_red)
+dfr[16,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Random Forest', 
+    Tuning.Parameters=paste0('mtry=', fitrf$bestTune[['mtry']]), 
+    RMSE.Train=min(fitrf$results[['RMSE']]),
+    RMSE.Test=postResample(predrf, testy_red)[['RMSE']]
+)
+plot(fitrf)
+
+```
+
+```{r}
+
+# Full model
+
+# Random Forest
+set.seed(77)
+fitrf_full <- train(trainx_full, trainy_full, method='rf', tuneLength=10, trControl=ctrl)
+fitrf_full
+predrf_full <- predict(fitrf_full, testx_full)
+dfr[34,] <- data.frame(
+    Data.Set='Full',
+    Model='Random Forest', 
+    Tuning.Parameters=paste0('mtry=', fitrf_full$bestTune[['mtry']]), 
+    RMSE.Train=min(fitrf_full$results[['RMSE']]),
+    RMSE.Test=postResample(predrf_full, testy_full)[['RMSE']]
+)
+plot(fitrf_full)
+
+```
+
+### Stochastic gradient boosted tree
+
+```{r warning=F}
+
+# Had to set message=FALSE to prevent thousands of trace messages
+
+# Reduced model
+
+# Stochastic gradient boosting
+gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
+                       .n.trees=seq(100, 1000, by=50),
+                       .shrinkage=c(0.01, 0.1),
+                       .n.minobsinnode=10)
+set.seed(77)
+fitgbm <- train(trainx_red, trainy_red, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
+
+```
+
+```{r}
+
+# Reduced model, cont'd
+fitgbm
+predgbm <- predict(fitgbm, testx_red)
+dfr[17,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Stochastic gradient boosted tree', 
+    Tuning.Parameters=paste0('interaction.depth=', fitgbm$bestTune[['interaction.depth']], 
+                             ', n.trees=', fitgbm$bestTune[['n.trees']], 
+                             ', shrinkage=', fitgbm$bestTune[['shrinkage']],
+                             ', n.minobsinnode=10'), 
+    Train.RMSE=min(fitgbm$results[['RMSE']]),
+    RMSE.Test=postResample(predgbm, testy_red)[['RMSE']]
+)
+plot(fitgbm)
+
+```
+
+```{r warning=F}
+
+# Had to set message=FALSE to prevent thousands of trace messages
+
+# Full model
+
+# Stochastic gradient boosting
+gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
+                       .n.trees=seq(100, 1000, by=50),
+                       .shrinkage=c(0.01, 0.1),
+                       .n.minobsinnode=10)
+set.seed(77)
+fitgbm_full <- train(trainx_full, trainy_full, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
+
+```
+
+```{r}
+
+# Full model, cont'd
+fitgbm_full
+predgbm_full <- predict(fitgbm_full, testx_full)
+dfr[35,] <- data.frame(
+    Data.Set='Full',
+    Model='Stochastic gradient boosted tree', 
+    Tuning.Parameters=paste0('interaction.depth=', fitgbm_full$bestTune[['interaction.depth']], 
+                             ', n.trees=', fitgbm_full$bestTune[['n.trees']], 
+                             ', shrinkage=', fitgbm_full$bestTune[['shrinkage']],
+                             ', n.minobsinnode=10'), 
+    Train.RMSE=min(fitgbm_full$results[['RMSE']]),
+    RMSE.Test=postResample(predgbm_full, testy_full)[['RMSE']]
+)
+plot(fitgbm_full)
+
+```
+
+### Cubist
+
+```{r}
+
+# Reduced model
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+set.seed(77)
+fitcub <- train(trainx_red, trainy_red, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+fitcub
+predcub <- predict(fitcub, testx_red)
+dfr[18,] <- data.frame(
+    Data.Set='Reduced',
+    Model='Cubist', 
+    Tuning.Parameters=paste0('committees=', fitcub$bestTune[['committees']], 
+                             ', neighbors=', fitcub$bestTune[['neighbors']]), 
+    Train.RMSE=min(fitcub$results[['RMSE']]),
+    RMSE.Test=postResample(predcub, testy_red)[['RMSE']]
+)
+plot(fitcub)
+
+```
+
+```{r}
+
+# Full model
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+set.seed(77)
+fitcub_full <- train(trainx_full, trainy_full, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+fitcub_full
+predcub_full <- predict(fitcub_full, testx_full)
+dfr[36,] <- data.frame(
+    Data.Set='Full',
+    Model='Cubist', 
+    Tuning.Parameters=paste0('committees=', fitcub_full$bestTune[['committees']], 
+                             ', neighbors=', fitcub_full$bestTune[['neighbors']]), 
+    Train.RMSE=min(fitcub_full$results[['RMSE']]),
+    RMSE.Test=postResample(predcub_full, testy_full)[['RMSE']]
+)
+plot(fitcub_full)
+
+```
+
+
+
+```{r}
+
+# Results table
+dfr %>%
+    arrange(RMSE.Test) %>%
+    select(Model, Data.Set, Tuning.Parameters, RMSE.Train, RMSE.Test) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Modeling Results')
+
+```
+
+
+
+```{r fig.height=6}
+
+dfr %>%
+    ggplot(aes(x=reorder(Model, desc(RMSE.Test)), y=RMSE.Test, fill=Data.Set)) +
+    geom_bar(stat='identity', position='dodge', width=0.75) +
+    coord_flip() +
+    xlab('') +
+    ylab('RMSE (Test set)') +
+    scale_fill_manual(values=c('#c03333', '#808080')) +
+    ggtitle('Modeling Results')
+
+```
+
+
 
 ```{r}
 
@@ -654,12 +1515,6 @@ Now that we have a full and reduced set of data, along with training and test se
 ```
 
 
-```{r}
-
-
-
-```
-
 
 ```{r}
 
@@ -668,6 +1523,15 @@ Now that we have a full and reduced set of data, along with training and test se
 ```
 
 
+
+```{r}
+
+
+
+```
+
+
+
 ```{r}
 
 
@@ -675,11 +1539,13 @@ Now that we have a full and reduced set of data, along with training and test se
 ```
 
 
+
 ```{r}
 
 
 
 ```
+
 
 
 ```{r}
