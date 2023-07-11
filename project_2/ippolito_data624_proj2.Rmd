@@ -33,6 +33,7 @@ library(RWeka)
 library(ipred)
 library(gbm)
 library(Cubist)
+library(doParallel)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -679,8 +680,8 @@ We'll start by performing linear regression-based modeling, then move to non-lin
 ```{r}
 
 # Create a data frame to store the results
-dfr <- data.frame(matrix(nrow=0, ncol=7))
-colnames(dfr) <- c('Data.Set', 'Model', 'Model.Class', 'Tuning.Parameters', 'RMSE.Train', 'RMSE.Test', 'MAPE.Test')
+dfr <- data.frame(matrix(nrow=0, ncol=8))
+colnames(dfr) <- c('Data.Set', 'Model', 'Model.Class', 'Tuning.Parameters', 'RMSE.Train', 'RMSE.Test', 'MAPE.Test', 'Train.Time')
 
 # specify 10x cross-validation
 ctrl <- trainControl(method='cv', number=10)
@@ -691,6 +692,12 @@ mape <- function(predicted, actual) {
     return (mape)
 }
 
+# Parallel processing; detect number of cores and start a parallel socket cluster;
+# all subsequent calls to caret::train() will use this cluster
+num_cores <- detectCores()
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
 ```
 
 ### Linear regression
@@ -700,8 +707,10 @@ mape <- function(predicted, actual) {
 # Reduced model
 
 # Linear model
+tstart <- Sys.time()
 set.seed(77)
 fitlm1 <- train(x=trainx_red, y=trainy_red, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlm1
 predlm1 <- predict(fitlm1, testx_red)
 dfr[1,] <- data.frame(
@@ -711,13 +720,16 @@ dfr[1,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitlm1$results[['RMSE']]),
     RMSE.Test=postResample(predlm1, testy_red)[['RMSE']],
-    MAPE.Test=mape(predlm1, testy_red)
+    MAPE.Test=mape(predlm1, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 # Stepwise linear model using MASS package/caret
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
+tstart <- Sys.time()
 set.seed(77)
 fitlm2 <- train(x=trainx_red, y=trainy_red, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlm2
 predlm2 <- predict(fitlm2, testx_red)
 dfr[2,] <- data.frame(
@@ -727,7 +739,8 @@ dfr[2,] <- data.frame(
     Tuning.Parameters=paste0('nvmax=', fitlm2$bestTune[['nvmax']]), 
     RMSE.Train=min(fitlm2$results[['RMSE']]),
     RMSE.Test=postResample(predlm2, testy_red)[['RMSE']],
-    MAPE.Test=mape(predlm2, testy_red)
+    MAPE.Test=mape(predlm2, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -737,8 +750,10 @@ dfr[2,] <- data.frame(
 # Full model
 
 # Linear model
+tstart <- Sys.time()
 set.seed(77)
 fitlm1_full <- train(x=trainx_full, y=trainy_full, method='lm', trControl=ctrl, preProcess=c('center', 'scale', 'YeoJohnson'))
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlm1_full
 predlm1_full <- predict(fitlm1_full, testx_full)
 dfr[19,] <- data.frame(
@@ -748,13 +763,16 @@ dfr[19,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitlm1_full$results[['RMSE']]),
     RMSE.Test=postResample(predlm1_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predlm1_full, testy_full)
+    MAPE.Test=mape(predlm1_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 # Stepwise linear model using MASS package/caret
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
+tstart <- Sys.time()
 set.seed(77)
 fitlm2_full <- train(x=trainx_full, y=trainy_full, method='leapSeq', trControl=ctrl, tuneGrid=stepGrid, preProcess=c('center', 'scale', 'YeoJohnson'))
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlm2_full
 predlm2_full <- predict(fitlm2_full, testx_full)
 dfr[20,] <- data.frame(
@@ -764,7 +782,8 @@ dfr[20,] <- data.frame(
     Tuning.Parameters=paste0('nvmax=', fitlm2_full$bestTune[['nvmax']]), 
     RMSE.Train=min(fitlm2_full$results[['RMSE']]),
     RMSE.Test=postResample(predlm2_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predlm2_full, testy_full)
+    MAPE.Test=mape(predlm2_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -776,8 +795,10 @@ dfr[20,] <- data.frame(
 # Reduced model
 
 # Robust linear regression
+tstart <- Sys.time()
 set.seed(77)
 fitrlm <- train(x=trainx_red, y=trainy_red, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitrlm
 predrlm <- predict(fitrlm, testx_red)
 dfr[3,] <- data.frame(
@@ -787,7 +808,8 @@ dfr[3,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitrlm$results[['RMSE']]),
     RMSE.Test=postResample(predrlm, testy_red)[['RMSE']],
-    MAPE.Test=mape(predrlm, testy_red)
+    MAPE.Test=mape(predrlm, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -797,8 +819,10 @@ dfr[3,] <- data.frame(
 # Full model
 
 # Robust linear regression
+tstart <- Sys.time()
 set.seed(77)
 fitrlm_full <- train(x=trainx_full, y=trainy_full, method='rlm', preProcess=c('center', 'scale', 'pca'), trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitrlm_full
 predrlm_full <- predict(fitrlm_full, testx_full)
 dfr[21,] <- data.frame(
@@ -808,7 +832,8 @@ dfr[21,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitrlm_full$results[['RMSE']]),
     RMSE.Test=postResample(predrlm_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predrlm_full, testy_full)
+    MAPE.Test=mape(predrlm_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -820,8 +845,10 @@ dfr[21,] <- data.frame(
 # Reduced model
 
 # PLS
+tstart <- Sys.time()
 set.seed(77)
 fitpls <- train(x=trainx_red, y=trainy_red, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_red) / 2)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitpls
 predpls <- predict(fitpls, testx_red)
 dfr[4,] <- data.frame(
@@ -831,7 +858,8 @@ dfr[4,] <- data.frame(
     Tuning.Parameters=paste0('ncomp=', fitpls$bestTune), 
     RMSE.Train=min(fitpls$results[['RMSE']]),
     RMSE.Test=postResample(predpls, testy_red)[['RMSE']],
-    MAPE.Test=mape(predpls, testy_red)
+    MAPE.Test=mape(predpls, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -841,8 +869,10 @@ dfr[4,] <- data.frame(
 # Full model
 
 # PLS
+tstart <- Sys.time()
 set.seed(77)
 fitpls_full <- train(x=trainx_full, y=trainy_full, method='pls', preProcess=c('center', 'scale'), trControl=ctrl, tuneLength=nrow(trainx_full) / 2)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitpls_full
 predpls_full <- predict(fitpls_full, testx_full)
 dfr[22,] <- data.frame(
@@ -852,7 +882,8 @@ dfr[22,] <- data.frame(
     Tuning.Parameters=paste0('ncomp=', fitpls_full$bestTune), 
     RMSE.Train=min(fitpls_full$results[['RMSE']]),
     RMSE.Test=postResample(predpls_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predpls_full, testy_full)
+    MAPE.Test=mape(predpls_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -864,9 +895,11 @@ dfr[22,] <- data.frame(
 # Reduced model
 
 # Ridge regression
+tstart <- Sys.time()
 set.seed(77)
 ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
 fitridge <- train(x=trainx_red, y=trainy_red, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitridge
 predridge <- predict(fitridge, testx_red)
 dfr[5,] <- data.frame(
@@ -876,7 +909,8 @@ dfr[5,] <- data.frame(
     Tuning.Parameters=paste0('labmda=', round(fitridge$bestTune[['lambda']], 4)), 
     RMSE.Train=min(fitridge$results[['RMSE']]),
     RMSE.Test=postResample(predridge, testy_red)[['RMSE']],
-    MAPE.Test=mape(predridge, testy_red)
+    MAPE.Test=mape(predridge, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -886,9 +920,11 @@ dfr[5,] <- data.frame(
 # Full model
 
 # Ridge regression
+tstart <- Sys.time()
 set.seed(77)
 ridgeGrid <- data.frame(.lambda=seq(0, 0.1, length=15))
 fitridge_full <- train(x=trainx_full, y=trainy_full, method='ridge', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=ridgeGrid)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitridge_full
 predridge_full <- predict(fitridge_full, testx_full)
 dfr[23,] <- data.frame(
@@ -898,7 +934,8 @@ dfr[23,] <- data.frame(
     Tuning.Parameters=paste0('labmda=', round(fitridge_full$bestTune[['lambda']], 4)), 
     RMSE.Train=min(fitridge_full$results[['RMSE']]),
     RMSE.Test=postResample(predridge_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predridge_full, testy_full)
+    MAPE.Test=mape(predridge_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -911,8 +948,10 @@ dfr[23,] <- data.frame(
 
 # Lasso regression
 enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+tstart <- Sys.time()
 set.seed(77)
 fitlasso <- train(x=trainx_red, y=trainy_red, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlasso
 predlasso <- predict(fitlasso, testx_red)
 dfr[6,] <- data.frame(
@@ -922,7 +961,8 @@ dfr[6,] <- data.frame(
     Tuning.Parameters=paste0('lambda=', fitlasso$bestTune[['lambda']], ', fraction=', fitlasso$bestTune[['fraction']]), 
     RMSE.Train=min(fitlasso$results[['RMSE']]),
     RMSE.Test=postResample(predlasso, testy_red)[['RMSE']],
-    MAPE.Test=mape(predlasso, testy_red)
+    MAPE.Test=mape(predlasso, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -933,8 +973,10 @@ dfr[6,] <- data.frame(
 
 # Lasso regression
 enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+tstart <- Sys.time()
 set.seed(77)
 fitlasso_full <- train(x=trainx_full, y=trainy_full, method='enet', preProcess=c('center', 'scale'), trControl=ctrl, tuneGrid=enetGrid)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitlasso_full
 predlasso_full <- predict(fitlasso_full, testx_full)
 dfr[24,] <- data.frame(
@@ -944,7 +986,8 @@ dfr[24,] <- data.frame(
     Tuning.Parameters=paste0('lambda=', fitlasso_full$bestTune[['lambda']], ', fraction=', fitlasso_full$bestTune[['fraction']]), 
     RMSE.Train=min(fitlasso_full$results[['RMSE']]),
     RMSE.Test=postResample(predlasso_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predlasso_full, testy_full)
+    MAPE.Test=mape(predlasso_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -956,8 +999,10 @@ dfr[24,] <- data.frame(
 # Reduced model
 
 # KNN model
+tstart <- Sys.time()
 set.seed(77)
 fitknn <- train(x=trainx_red, y=trainy_red, method='knn', preProc=c("center", "scale"), tuneLength=10)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitknn
 predknn <- predict(fitknn, testx_red)
 dfr[7,] <- data.frame(
@@ -967,18 +1012,20 @@ dfr[7,] <- data.frame(
     Tuning.Parameters=paste0('k=', fitknn$bestTune[['k']]), 
     RMSE.Train=min(fitknn$results[['RMSE']]),
     RMSE.Test=postResample(predknn, testy_red)[['RMSE']],
-    MAPE.Test=mape(predknn, testy_red)
+    MAPE.Test=mape(predknn, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
 
 ```{r}
-
 # Full model
 
 # KNN model
+tstart <- Sys.time()
 set.seed(77)
 fitknn_full <- train(x=trainx_full, y=trainy_full, method='knn', preProc=c("center", "scale"), tuneLength=10)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitknn_full
 predknn_full <- predict(fitknn_full, testx_full)
 dfr[25,] <- data.frame(
@@ -988,7 +1035,9 @@ dfr[25,] <- data.frame(
     Tuning.Parameters=paste0('k=', fitknn_full$bestTune[['k']]), 
     RMSE.Train=min(fitknn_full$results[['RMSE']]),
     RMSE.Test=postResample(predknn_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predknn_full, testy_full)
+    MAPE.Test=mape(predknn_full, testy_full),
+    Train.Time=round(telapsed, 3),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1001,8 +1050,10 @@ dfr[25,] <- data.frame(
 
 # MARS model
 marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+tstart <- Sys.time()
 set.seed(77)
 fitmars <- train(x=trainx_red, y=trainy_red, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmars
 predmars <- predict(fitmars, testx_red)
 dfr[8,] <- data.frame(
@@ -1012,7 +1063,8 @@ dfr[8,] <- data.frame(
     Tuning.Parameters=paste0('degree=', fitmars$bestTune[['degree']], ', nprune=', fitmars$bestTune[['nprune']]), 
     RMSE.Train=min(fitmars$results[['RMSE']]),
     RMSE.Test=postResample(predmars, testy_red)[['RMSE']],
-    MAPE.Test=mape(predmars, testy_red)
+    MAPE.Test=mape(predmars, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1023,8 +1075,10 @@ dfr[8,] <- data.frame(
 
 # MARS model
 marsGrid <- expand.grid(.degree=1:2, .nprune=2:10)  # set tuning parameters
+tstart <- Sys.time()
 set.seed(77)
 fitmars_full <- train(x=trainx_full, y=trainy_full, method='earth', tuneGrid=marsGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmars_full
 predmars_full <- predict(fitmars_full, testx_full)
 dfr[26,] <- data.frame(
@@ -1034,7 +1088,8 @@ dfr[26,] <- data.frame(
     Tuning.Parameters=paste0('degree=', fitmars_full$bestTune[['degree']], ', nprune=', fitmars_full$bestTune[['nprune']]), 
     RMSE.Train=min(fitmars_full$results[['RMSE']]),
     RMSE.Test=postResample(predmars_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predmars_full, testy_full)
+    MAPE.Test=mape(predmars_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1046,8 +1101,10 @@ dfr[26,] <- data.frame(
 # Reduced model
 
 # SVM model
+tstart <- Sys.time()
 set.seed(77)
 fitsvm <- train(x=trainx_red, y=trainy_red, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitsvm
 predsvm <- predict(fitsvm, testx_red)
 dfr[9,] <- data.frame(
@@ -1057,7 +1114,8 @@ dfr[9,] <- data.frame(
     Tuning.Parameters=paste0('C=', fitsvm$bestTune[['C']], ', sigma=', round(fitsvm$bestTune[['sigma']], 3)), 
     RMSE.Train=min(fitsvm$results[['RMSE']]),
     RMSE.Test=postResample(predsvm, testy_red)[['RMSE']],
-    MAPE.Test=mape(predsvm, testy_red)
+    MAPE.Test=mape(predsvm, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1067,8 +1125,10 @@ dfr[9,] <- data.frame(
 # Full model
 
 # SVM model
+tstart <- Sys.time()
 set.seed(77)
 fitsvm_full <- train(x=trainx_full, y=trainy_full, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitsvm_full
 predsvm_full <- predict(fitsvm_full, testx_full)
 dfr[27,] <- data.frame(
@@ -1078,7 +1138,8 @@ dfr[27,] <- data.frame(
     Tuning.Parameters=paste0('C=', fitsvm_full$bestTune[['C']], ', sigma=', round(fitsvm_full$bestTune[['sigma']], 3)), 
     RMSE.Train=min(fitsvm_full$results[['RMSE']]),
     RMSE.Test=postResample(predsvm_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predsvm_full, testy_full)
+    MAPE.Test=mape(predsvm_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1091,9 +1152,11 @@ dfr[27,] <- data.frame(
 
 # nnet model using model averaging
 nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=F)  # set tuning parameters
+tstart <- Sys.time()
 set.seed(77)
 fitnnet <- train(x=trainx_red, y=trainy_red, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
              linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitnnet
 prednnet <- predict(fitnnet, testx_red)
 dfr[10,] <- data.frame(
@@ -1103,7 +1166,8 @@ dfr[10,] <- data.frame(
     Tuning.Parameters=paste0('decay=', fitnnet$bestTune[['decay']], ', size=', fitnnet$bestTune[['size']], ', bag=False'), 
     RMSE.Train=min(fitnnet$results[['RMSE']]),
     RMSE.Test=postResample(prednnet, testy_red)[['RMSE']],
-    MAPE.Test=mape(prednnet, testy_red)
+    MAPE.Test=mape(prednnet, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1114,9 +1178,11 @@ dfr[10,] <- data.frame(
 
 # nnet model using model averaging
 nnetGrid <- expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=F)  # set tuning parameters
+tstart <- Sys.time()
 set.seed(77)
 fitnnet_full <- train(x=trainx_full, y=trainy_full, method='avNNet', preProc=c('center', 'scale'), tunGrid=nnetGrid, trControl=ctrl,
              linout=T, trace=F, MaxNWts=10 * (ncol(trainx_red) + 1) + 10 + 1, maxit=500)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitnnet_full
 prednnet_full <- predict(fitnnet_full, testx_full)
 dfr[28,] <- data.frame(
@@ -1126,7 +1192,8 @@ dfr[28,] <- data.frame(
     Tuning.Parameters=paste0('decay=', fitnnet_full$bestTune[['decay']], ', size=', fitnnet_full$bestTune[['size']], ', bag=False'), 
     RMSE.Train=min(fitnnet_full$results[['RMSE']]),
     RMSE.Test=postResample(prednnet_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(prednnet_full, testy_full)
+    MAPE.Test=mape(prednnet_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1138,8 +1205,10 @@ dfr[28,] <- data.frame(
 # Reduced model
 
 # Basic regression tree
+tstart <- Sys.time()
 set.seed(77)
 fitcart1 <- train(trainx_red, trainy_red, method='rpart', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcart1
 predcart1 <- predict(fitcart1, testx_red)
 dfr[11,] <- data.frame(
@@ -1149,7 +1218,8 @@ dfr[11,] <- data.frame(
     Tuning.Parameters=paste0('cp=', round(fitcart1$bestTune[['cp']], 4)), 
     Train.RMSE=min(fitcart1$results[['RMSE']]),
     RMSE.Test=postResample(predcart1, testy_red)[['RMSE']],
-    MAPE.Test=mape(predcart1, testy_red)
+    MAPE.Test=mape(predcart1, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1159,8 +1229,10 @@ dfr[11,] <- data.frame(
 # Full model
 
 # Basic regression tree
+tstart <- Sys.time()
 set.seed(77)
 fitcart1_full <- train(trainx_full, trainy_full, method='rpart', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcart1_full
 predcart1_full <- predict(fitcart1_full, testx_full)
 dfr[29,] <- data.frame(
@@ -1170,7 +1242,8 @@ dfr[29,] <- data.frame(
     Tuning.Parameters=paste0('cp=', round(fitcart1_full$bestTune[['cp']], 4)), 
     Train.RMSE=min(fitcart1_full$results[['RMSE']]),
     RMSE.Test=postResample(predcart1_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predcart1_full, testy_full)
+    MAPE.Test=mape(predcart1_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1182,7 +1255,10 @@ dfr[29,] <- data.frame(
 # Reduced model
 
 # Basic CART model - tuned using node depth
+tstart <- Sys.time()
+set.seed(77)
 fitcart2 <- train(trainx_red, trainy_red, method='rpart2', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcart2
 predcart2 <- predict(fitcart2, testx_red)
 dfr[12,] = data.frame(
@@ -1192,7 +1268,8 @@ dfr[12,] = data.frame(
     Tuning.Parameters=paste0('maxdepth=', fitcart2$bestTune[['maxdepth']]), 
     Train.RMSE=min(fitcart2$results[['RMSE']]),
     RMSE.Test=postResample(predcart2, testy_red)[['RMSE']],
-    MAPE.Test=mape(predcart2, testy_red)
+    MAPE.Test=mape(predcart2, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1202,7 +1279,10 @@ dfr[12,] = data.frame(
 # Full model
 
 # Basic CART model - tuned using node depth
+tstart <- Sys.time()
+set.seed(77)
 fitcart2_full <- train(trainx_full, trainy_full, method='rpart2', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcart2_full
 predcart2_full <- predict(fitcart2_full, testx_full)
 dfr[30,] = data.frame(
@@ -1212,7 +1292,8 @@ dfr[30,] = data.frame(
     Tuning.Parameters=paste0('maxdepth=', fitcart2_full$bestTune[['maxdepth']]), 
     Train.RMSE=min(fitcart2_full$results[['RMSE']]),
     RMSE.Test=postResample(predcart2_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predcart2_full, testy_full)
+    MAPE.Test=mape(predcart2_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1225,8 +1306,10 @@ dfr[30,] = data.frame(
 
 # Model tree
 mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rules=c('Yes', 'No'))
+tstart <- Sys.time()
 set.seed(77)
 fitmtree1 <- train(trainx_red, trainy_red, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmtree1
 predmtree1 <- predict(fitmtree1, testx_red)
 dfr[13,] <- data.frame(
@@ -1238,7 +1321,8 @@ dfr[13,] <- data.frame(
                              ', rules=', fitmtree1$bestTune[['rules']]), 
     RMSE.Train=min(fitmtree1$results[['RMSE']]),
     RMSE.Test=postResample(predmtree1, testy_red)[['RMSE']],
-    MAPE.Test=mape(predmtree1, testy_red)
+    MAPE.Test=mape(predmtree1, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1249,8 +1333,10 @@ dfr[13,] <- data.frame(
 
 # Model tree
 mtreeGrid1 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'), .rules=c('Yes', 'No'))
+tstart <- Sys.time()
 set.seed(77)
 fitmtree1_full <- train(trainx_full, trainy_full, method='M5', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid1)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmtree1_full
 predmtree1_full <- predict(fitmtree1_full, testx_full)
 dfr[31,] <- data.frame(
@@ -1262,7 +1348,8 @@ dfr[31,] <- data.frame(
                              ', rules=', fitmtree1_full$bestTune[['rules']]), 
     RMSE.Train=min(fitmtree1_full$results[['RMSE']]),
     RMSE.Test=postResample(predmtree1_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predmtree1_full, testy_full)
+    MAPE.Test=mape(predmtree1_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1275,8 +1362,10 @@ dfr[31,] <- data.frame(
 
 # Model tree (rule-based)
 mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
+tstart <- Sys.time()
 set.seed(77)
 fitmtree2 <- train(trainx_red, trainy_red, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmtree2
 predmtree2 <- predict(fitmtree2, testx_red)
 dfr[14,] <- data.frame(
@@ -1287,7 +1376,8 @@ dfr[14,] <- data.frame(
                              ', smoothed=', fitmtree2$bestTune[['smoothed']]), 
     RMSE.Train=min(fitmtree2$results[['RMSE']]),
     RMSE.Test=postResample(predmtree2, testy_red)[['RMSE']],
-    MAPE.Test=mape(predmtree2, testy_red)
+    MAPE.Test=mape(predmtree2, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1298,8 +1388,10 @@ dfr[14,] <- data.frame(
 
 # Model tree (rule-based)
 mtreeGrid2 <- expand.grid(.pruned=c('Yes', 'No'), .smoothed=c('Yes', 'No'))
+tstart <- Sys.time()
 set.seed(77)
 fitmtree2_full <- train(trainx_full, trainy_full, method='M5Rules', trControl=ctrl, control=Weka_control(M=10), tuneGrid=mtreeGrid2)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitmtree2_full
 predmtree2_full <- predict(fitmtree2_full, testx_full)
 dfr[32,] <- data.frame(
@@ -1310,7 +1402,8 @@ dfr[32,] <- data.frame(
                              ', smoothed=', fitmtree2_full$bestTune[['smoothed']]), 
     RMSE.Train=min(fitmtree2_full$results[['RMSE']]),
     RMSE.Test=postResample(predmtree2_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predmtree2_full, testy_full)
+    MAPE.Test=mape(predmtree2_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1322,8 +1415,10 @@ dfr[32,] <- data.frame(
 # Reduced model
 
 # Bagged tree
+tstart <- Sys.time()
 set.seed(77)
 fitbag <- train(trainx_red, trainy_red, method='treebag', trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitbag
 predbag <- predict(fitbag, testx_red)
 dfr[15,] <- data.frame(
@@ -1333,7 +1428,8 @@ dfr[15,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitbag$results[['RMSE']]),
     RMSE.Test=postResample(predbag, testy_red)[['RMSE']],
-    MAPE.Test=mape(predbag, testy_red)
+    MAPE.Test=mape(predbag, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1343,8 +1439,10 @@ dfr[15,] <- data.frame(
 # Full model
 
 # Bagged tree
+tstart <- Sys.time()
 set.seed(77)
 fitbag_full <- train(trainx_full, trainy_full, method='treebag', trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitbag_full
 predbag_full <- predict(fitbag_full, testx_full)
 dfr[33,] <- data.frame(
@@ -1354,7 +1452,8 @@ dfr[33,] <- data.frame(
     Tuning.Parameters='', 
     RMSE.Train=min(fitbag_full$results[['RMSE']]),
     RMSE.Test=postResample(predbag_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predbag_full, testy_full)
+    MAPE.Test=mape(predbag_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1366,8 +1465,10 @@ dfr[33,] <- data.frame(
 # Reduced model
 
 # Random Forest
+tstart <- Sys.time()
 set.seed(77)
 fitrf <- train(trainx_red, trainy_red, method='rf', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitrf
 predrf <- predict(fitrf, testx_red)
 dfr[16,] <- data.frame(
@@ -1377,7 +1478,8 @@ dfr[16,] <- data.frame(
     Tuning.Parameters=paste0('mtry=', fitrf$bestTune[['mtry']]), 
     RMSE.Train=min(fitrf$results[['RMSE']]),
     RMSE.Test=postResample(predrf, testy_red)[['RMSE']],
-    MAPE.Test=mape(predrf, testy_red)
+    MAPE.Test=mape(predrf, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1387,8 +1489,10 @@ dfr[16,] <- data.frame(
 # Full model
 
 # Random Forest
+tstart <- Sys.time()
 set.seed(77)
 fitrf_full <- train(trainx_full, trainy_full, method='rf', tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitrf_full
 predrf_full <- predict(fitrf_full, testx_full)
 dfr[34,] <- data.frame(
@@ -1398,7 +1502,8 @@ dfr[34,] <- data.frame(
     Tuning.Parameters=paste0('mtry=', fitrf_full$bestTune[['mtry']]), 
     RMSE.Train=min(fitrf_full$results[['RMSE']]),
     RMSE.Test=postResample(predrf_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predrf_full, testy_full)
+    MAPE.Test=mape(predrf_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1416,8 +1521,10 @@ gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
                        .n.trees=seq(100, 1000, by=50),
                        .shrinkage=c(0.01, 0.1),
                        .n.minobsinnode=10)
+tstart <- Sys.time()
 set.seed(77)
 fitgbm <- train(trainx_red, trainy_red, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 
 ```
 
@@ -1436,7 +1543,8 @@ dfr[17,] <- data.frame(
                              ', n.minobsinnode=10'), 
     Train.RMSE=min(fitgbm$results[['RMSE']]),
     RMSE.Test=postResample(predgbm, testy_red)[['RMSE']],
-    MAPE.Test=mape(predgbm, testy_red)
+    MAPE.Test=mape(predgbm, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1452,8 +1560,10 @@ gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
                        .n.trees=seq(100, 1000, by=50),
                        .shrinkage=c(0.01, 0.1),
                        .n.minobsinnode=10)
+tstart <- Sys.time()
 set.seed(77)
 fitgbm_full <- train(trainx_full, trainy_full, method='gbm', tuneGrid=gbmGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 
 ```
 
@@ -1472,7 +1582,8 @@ dfr[35,] <- data.frame(
                              ', n.minobsinnode=10'), 
     Train.RMSE=min(fitgbm_full$results[['RMSE']]),
     RMSE.Test=postResample(predgbm_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predgbm_full, testy_full)
+    MAPE.Test=mape(predgbm_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1485,8 +1596,10 @@ dfr[35,] <- data.frame(
 
 # Cubist
 cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+tstart <- Sys.time()
 set.seed(77)
 fitcub <- train(trainx_red, trainy_red, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcub
 predcub <- predict(fitcub, testx_red)
 dfr[18,] <- data.frame(
@@ -1497,7 +1610,8 @@ dfr[18,] <- data.frame(
                              ', neighbors=', fitcub$bestTune[['neighbors']]), 
     Train.RMSE=min(fitcub$results[['RMSE']]),
     RMSE.Test=postResample(predcub, testy_red)[['RMSE']],
-    MAPE.Test=mape(predcub, testy_red)
+    MAPE.Test=mape(predcub, testy_red),
+    Train.Time=round(telapsed, 3)
 )
 
 ```
@@ -1508,8 +1622,10 @@ dfr[18,] <- data.frame(
 
 # Cubist
 cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+tstart <- Sys.time()
 set.seed(77)
 fitcub_full <- train(trainx_full, trainy_full, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+telapsed <- as.numeric(Sys.time() - tstart)
 fitcub_full
 predcub_full <- predict(fitcub_full, testx_full)
 dfr[36,] <- data.frame(
@@ -1520,8 +1636,16 @@ dfr[36,] <- data.frame(
                              ', neighbors=', fitcub_full$bestTune[['neighbors']]), 
     Train.RMSE=min(fitcub_full$results[['RMSE']]),
     RMSE.Test=postResample(predcub_full, testy_full)[['RMSE']],
-    MAPE.Test=mape(predcub_full, testy_full)
+    MAPE.Test=mape(predcub_full, testy_full),
+    Train.Time=round(telapsed, 3)
 )
+
+```
+
+```{r}
+
+# Stop the parallel processing cluster
+stopCluster(cl)
 
 ```
 
@@ -1536,7 +1660,7 @@ Another useful metric is the mean absolute percentage error (MAPE), which measur
 # Results table
 dfr %>%
     arrange(MAPE.Test) %>%
-    select(Model, Data.Set, Tuning.Parameters, RMSE.Train, RMSE.Test, MAPE.Test) %>%
+    select(Model, Data.Set, Tuning.Parameters, Train.Time, RMSE.Train, RMSE.Test, MAPE.Test) %>%
     flextable() %>%
     width(width = 2) %>%
     fontsize(size = 10) %>%
@@ -1611,7 +1735,7 @@ plot(fitcub_full)
 
 # todo:
 
-# use mape instead of rmse?
+# graph performance time in seconds
 # show graph of average models by class
 # try to tweak the top model(s) to get better mape
 # varImp of the top model(s)
