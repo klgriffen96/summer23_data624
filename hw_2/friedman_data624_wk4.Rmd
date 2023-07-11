@@ -344,26 +344,162 @@ The lowest MAPE results on the test set is from the neural net, which is ~1.15.
 
 Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
 
-(a) Which nonlinear regression model gives the optimal resampling and test  set performance?
+(a) Which nonlinear regression model gives the optimal resampling and test set performance?
 
 **Approach**
+
+First, set up a data frame for the results and set the cross-validation parameters. Then, preprocess the data using MICE to impute empty values. Finally, split the data and run KNN, neural network, lasso, and SVM. See what's the best results based on lowest MAPE comparing predictors to test set.
+
+To simplify what are several repeated steps, we will create a function that takes as inputs a dataframe, model to test ("func), and a list of parameters to call with that funciton.
+
+```{r 7.5}
+
+dfchem_raw <- ChemicalManufacturingProcess  # To avoid typing this many letters
+
+prep <- function(df){
+
+  # Impute missing values
+  imp <- knnImputation(df, k=3)
+  set.seed(77)
+  df_complete <- complete(imp)
+
+  # Remove the highly correlated variables
+  high_corr <- findCorrelation(cor(df_complete), cutoff=0.9, exact=T, verbose=F, names=F)
+  df_remove_corr <- df_complete[,-high_corr]
+
+  # Remove NZV features
+  tmp_nzv <- nearZeroVar(df_remove_corr)
+  df_clean <- df_remove_corr[,-tmp_nzv]
+  
+  return(df_clean)
+  
+}
+
+dfchem <- prep(dfchem_raw)
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Set seed
+set.seed(77)
+
+# Split into train/test; createDataPartition generates indicies of the training set
+train_indices <- createDataPartition(dfchem$Yield, p=0.80, times=1, list=F)
+dftrain <- dfchem[train_indices,]
+dftest <- dfchem[-train_indices,]
+
+#test set
+testy <- dftest$Yield
+testx <- dftest %>% dplyr::select(-Yield)
+
+#train set
+trainx <- dftrain %>% dplyr::select(-Yield)
+trainy <- dftrain$Yield
+
+# define function to train, predict, and evaluate model fit
+modelTest <- function(params, testx, testy, func){ 
+  # "func" allows you to pass function as a parameter
+  
+  print(
+    paste(
+      "Running model",
+      params$method
+    ))
+  
+  set.seed(77)  
+  fit <- do.call(func, params)
+  
+  pred <- predict(fit, newdata = testx)
+  
+  res <- postResample(pred = pred, obs = testy)
+  
+  print(res)
+
+  return(res)
+
+}
+
+
+# create params for models to test 
+## SVM model
+svmParams <- list(
+  x=trainx, y=trainy, method='svmRadial', preProc=c('center', 'scale'), tuneLength=14, trControl=ctrl
+  )
+## KNN model
+knnParams <- list(
+  x=trainx, y=trainy, method='knn', tuneLength=10, trControl=ctrl, preProc=c('center', 'scale')
+  )
+## MARS model
+MARSParams <- list(
+  x=trainx, y=trainy, method='earth', 
+  tuneGrid=expand.grid(.degree=1:2, .nprune=2:10),  # set tuning parameters
+  trControl=ctrl
+  )
+  
+## nnet model using model averaging
+nnetParams <- list(
+  x=trainx, y=trainy, method='avNNet', preProc=c('center', 'scale'), 
+  tunGrid=expand.grid(.decay=c(0, 0.01, 0.1), .size=c(1:10), .bag=c(T, F)),  # set tuning parameters 
+  trControl=ctrl,
+  linout=T, 
+  trace=F,
+  MaxNWts=10 * (ncol(trainx) + 1) + 10 + 1, 
+  maxit=500
+)
+
+# create list of params
+params <- list(
+  svmParams,
+  knnParams,
+  MARSParams,
+  nnetParams
+  )
+
+# Results data frame
+results <- data.frame()
+
+for (param in params){
+  res <- modelTest(param, testx, testy, train)
+  row <- data.frame(Model = param$method, 
+                    RMSE = res[['RMSE']])
+  results <- rbind(results, row)
+}
+
+colnames(results) <- c('Model', 'RMSE')
+
+results %>% dplyr::arrange(RMSE) %>% flextable::flextable()
+```
+
 ```{r}
+results %>% ggplot(aes(x=Model, y = RMSE, fill = Model)) +geom_col(stat="identity")
 ```
 
 **Interpretation of Results**
+
+The lowest RMSE when tested against the test set is from the 'earth' method, which is running the MARS model type; however none of the models produce very dramatically different results.
+
 (b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
 **Approach**
+
+We will use the function `varImp` from the package `caret` to calculate the relative important of each variable.
 ```{r}
+earthFit <- do.call(train, MARSParams)
+varImp(earthFit)
 ```
 
 **Interpretation of Results**
 (c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
 
 **Approach**
+We can calculate the correlation between the top predictor and the yield, and also calculate the correlations. 
 ```{r}
+plot(dfchem$ManufacturingProcess32, dfchem$Yield)
+cor(dfchem$ManufacturingProcess32, dfchem$Yield)
 ```
 
 **Interpretation of Results**
+We can see a fairly strong linear relationship between the predictor and `Yield`. Although MARS is a non-linear approach, it is made up of multiple linear regressions so it is not surprising that the top predictor shows a strong linear relationship with the target.
 
 ### 8.1
 
@@ -382,6 +518,7 @@ colnames(simulated)[ncol(simulated)] <- "y"
 
 
 **Approach**
+
 **Code**
 ```{r}
 library(randomForest)
@@ -390,7 +527,7 @@ model1 <- randomForest(y ~ ., data = simulated,
                        importance = TRUE,
                        ntree = 1000)
 rfImp1 <- varImp(model1, scale = FALSE)
-
+rfImp1
 ```
 **Interpretation of Results**
 
