@@ -1720,7 +1720,50 @@ dfr %>%
 
 ```{r}
 
+# Cubist - full set - drop Brand.Code
+dfm_nobrand <- dfm_full %>%
+    select(-starts_with('Brand.Code'))
 
+# Create vector of training rows
+set.seed(77)
+train_rows <- createDataPartition(dfm_nobrand$PH, p=0.8, list=F)
+
+# Separate training from test
+dfm_nobrand_train <- dfm_nobrand[train_rows,]
+dfm_nobrand_test <- dfm_nobrand[-train_rows,]
+
+# Separate outcome from predictors
+trainx_nobrand <- dfm_nobrand_train[,2:ncol(dfm_nobrand_train)]
+trainy_nobrand <- dfm_nobrand_train[,1]
+testx_nobrand <- dfm_nobrand_test[,2:ncol(dfm_nobrand_test)]
+testy_nobrand <- dfm_nobrand_test[,1]
+
+# Parallel processing
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+tstart <- Sys.time()
+set.seed(77)
+fitcub_nobrand <- train(trainx_nobrand, trainy_nobrand, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
+fitcub_nobrand
+predcub_nobrand <- predict(fitcub_nobrand, testx_nobrand)
+dfr[37,] <- data.frame(
+    Data.Set='No Brand.Code',
+    Model='Cubist', 
+    Model.Class='Tree',
+    Tuning.Parameters=paste0('committees=', fitcub_nobrand$bestTune[['committees']], 
+                             ', neighbors=', fitcub_nobrand$bestTune[['neighbors']]), 
+    Train.RMSE=min(fitcub_nobrand$results[['RMSE']]),
+    RMSE.Test=postResample(predcub_nobrand, testy_nobrand)[['RMSE']],
+    MAPE.Test=mape(predcub_nobrand, testy_nobrand),
+    Train.Time=round(telapsed, 3)
+)
+
+# Stop the parallel processing cluster
+stopCluster(cl)
 
 ```
 
@@ -1728,7 +1771,17 @@ dfr %>%
 
 ```{r}
 
-
+# Reprint top results
+dfr %>%
+    arrange(MAPE.Test) %>%
+    select(Model, Data.Set, Tuning.Parameters, Train.Time, RMSE.Train, RMSE.Test, MAPE.Test) %>%
+    head(5) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Top 5 Modeling Results')
 
 ```
 
