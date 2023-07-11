@@ -163,7 +163,7 @@ As shown in the table almost half (15) of the variables have a VIF greater than 
 
 It should be noted that, while collinearity and multicollinearity adversely affect a linear regression-based model's capacity to generate useful information about the contribution of each predictor to the outcome, these conditions don't impede the model's performance. Therefore, the presence of collinear or multicollinear predictors don't automatically preclude us from using these types of models. **[need citation]**
 
-### Near-zero-variance predictors
+### Near-zero variance
 
 We'll look for variables having near-zero variance (NZV) since some models are sensitive to this condition. A variable exhibiting NZV is typically categorical **[is this true?]** and is further characterized has having only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
 
@@ -424,7 +424,7 @@ do.call("grid.arrange", c(plts, ncol=3))
 
 ```
 
-Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are highly suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers.
+Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are somewhat suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers. Besides the suspect Alch.Rel data points, the remaining points appear to be valid (though extreme) values when compared to the main body of data points.
 
 ## Modeling Approach
 
@@ -523,7 +523,7 @@ data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_full_train), nrow(
     fontsize(size = 10) %>%
     line_spacing(space = 1) %>%
     hline(part = "all") %>%
-    set_caption('Data partiioning')
+    set_caption('Data partiioning (full data set)')
 
 ```
 
@@ -533,49 +533,119 @@ It is important to note that some models are sensitive to the numbers of observa
 
 Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities.
 
+First, we'll make a copy of the full data set (prior to splitting into training and test sets).
+
+```{r}
+
+# Copy the full set to the reduced set
+dfm_red <- dfm_full
+
+```
+
 ### Collinearity
 
-```{r}
+As we noted earlier, there the data set exhibits some collinearity and multicollinearity. Based on VIFs calculated previously, almost half the predictors exhibited strong multicollinearity. Since removing that many predictors would likely cause a detrimental loss of information, a different approach is warranted. We opted to use the approach presented by Kuhl and Johnson (2013) in which predictors are iteratively compared pairwise, removing those with the highest correlation value until a certain threshold is attained. While this procedure only addresses collinearity rather than multicollinearity, it can nonetheless yield significant improvements to model performance and stability.
 
-
-
-```
-
+We'll use the findCorrelation() function to find candidate variables for removal due to collinearity. 
 
 ```{r}
 
-
+# Get correlation table
+corr2 <- cor(dfm_red[,2:ncol(dfm_red)], use='complete')
+corr_vars <- findCorrelation(corr2, names=T, cutoff=0.9)
+data.frame(Variable=corr_vars) %>%
+    arrange(Variable) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Highly correlated variables') %>%
+    delete_part( part = "header")
 
 ```
 
+This is a manageable number of variables, so we'll proceed with removing them from our data set.
 
 ```{r}
 
-
+# Remove highly correlated variables from the reduced data set
+dfm_red <- dfm_red[,-match(corr_vars, colnames(dfm_red))]
 
 ```
 
+### Near-zero variance
+
+There is only a single predictor with NZV (Hyd.Pressure1). Since this condition can negatively impact linear regression-based models, we'll remove that from the reduced data set.
 
 ```{r}
 
-
+# Remove NZV variables from the reduced data set
+dfm_red <- dfm_red[,-match('Hyd.Pressure1', colnames(dfm_red))]
 
 ```
 
+### Skewness
+
+We'll first check for zero or negative values for the variables that were earlier identified as skewed. If there are any such values, the Box-Cox transformation will be infeasible and we'll have to use a different method.
 
 ```{r}
 
+# Define variables id'ed as skewed from earlier
+skewed_vars <- c('MFR', 'Filler.Speed', 'Oxygen.Filler', 'Temperature', 'Air.Pressurer', 'PSC.CO2')
 
+# Generate summary to look at min/max values - we're looking for zero or negative values
+summary(dfm_red[,skewed_vars])
 
 ```
 
+Since PSC.CO2 contains zero values, we'll use the Yeo-Johnson transformation instead. Because the caret package supports Yeo-Johnson natively, we'll perform the transformations as part of the preprocessing component during modeling. This has the advantage that predictions made based on our models will be automatically back-transformed rather than requiring manual transformation.
+
+### Outliers
+
+Based on the outlier plots from earlier, most of the data points beyond the three-standard-deviation cutoff appear to be valid data points, though located on the extreme outer edges of the main body of data. One exception is Alch.Red, which includes six somewhat suspect points located along the left- and right-hand margins of the plot. The other possible exception is data point exhibiting a PH value of 9.36. It is unclear whether these are truly outliers that should be excluded. But in either case, they are points of high influence and they are small in number, so we chose to remove them.
 
 ```{r}
 
+# Remove sus PH data point
+dfm_red <- dfm_red[dfm_red$PH < 9.36,]
 
+# Find cutoff value of Alch.Red (three sd's)
+loval <- mean(dfm_red$Alch.Rel) - (3 * sd(dfm_red$Alch.Rel))
+hival <- mean(dfm_red$Alch.Rel) + (3 * sd(dfm_red$Alch.Rel))
+
+# Remove sus Alch.Red data points
+dfm_red <- dfm_red[dfm_red$Alch.Rel >+ loval & dfm_red$Alch.Rel <= hival,]
 
 ```
 
+After all modifications to the reduced data set have been made, our final version of the reduced set contains 2563 observations of 29 predictors, reduced from the full set of 2570 observations of 35 predictors. As with the full data set, we'll split the reduced set into training and test sets and verify that the number of predictors doesn't exceed the number of observations.
+
+```{r}
+
+# Create vector of training rows
+train_rows <- createDataPartition(dfm_red$PH, p=0.8, list=F)
+
+# Separate training from test
+dfm_red_train <- dfm_red[train_rows,]
+dfm_red_test <- dfm_red[-train_rows,]
+
+# Generate a pretty table for the report
+data.frame(Set=c('Training', 'Test'), Observations=c(nrow(dfm_red_train), nrow(dfm_red_test))) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Data partiioning (reduced data set)')
+
+```
+
+The table above shows that the test set contains 511 observations, far exceeding the number of predictors (29), so we won't need to worry about models that perform poorly when there are more predictors than observations.
+
+## Modeling
+
+Now that we have a full and reduced set of data, along with training and test sets within those two sets, we can begin modeling.
 
 ```{r}
 

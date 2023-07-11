@@ -1,0 +1,625 @@
+---
+title: "DATA 624 Project 2"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    code_folding: show
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(caret)
+library(e1071)
+library(DMwR2)
+library(pls)
+library(elasticnet)
+library(kernlab)
+library(earth)
+library(randomForest)
+library(rpart)
+library(party)
+library(gbm)
+library(Cubist)
+library(forecast)
+library(doParallel)
+library(kableExtra)
+library(corrplot)
+```
+
+# Project Requirements
+
+You are given a simple data set from a beverage manufacturing company. It consists of 2,571 rows/cases of data and 33 columns / variables. Your goal is to use this data to predict PH (a column in the set). Potential for hydrogen (pH) is a measure of acidity/alkalinity, it must conform in a critical range and therefore it is important to understand its influence and predict its values. This is production data. pH is a KPI, Key Performance Indicator.
+
+You are also given a scoring set (267 cases). All variables other than the dependent or target. You will use this data to score your model with your best predictions.
+
+# The Data
+
+The data is provided in three files:
+
+-   Copy of Data Columns, Types.xlsx\
+-   StudentData - TO MODEL.xlsx\
+-   StudentEvaluation- TO PREDICT.xlsx
+
+The data is stored locally for pre-processing and uploaded to GitHub as .csv for storage and access,
+
+```{r loading-data, warning=FALSE, message=FALSE, cache=TRUE, error=FALSE}
+# local filepaths
+columns.file <- 'Copy of Data Columns, Types.xlsx'
+model.file <- 'https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/project_2/StudentData%20-%20TO%20MODEL.csv'
+evaluation.file <- 'https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/project_2/StudentEvaluation-%20TO%20PREDICT.csv'
+
+# loading the data files
+columns.data <- read_excel(columns.file)
+model.data <- read.csv(model.file) 
+evaluation.data <- read.csv(evaluation.file) 
+```
+
+The `column.data` file provides information about the data files and is only needed to deal with reading the modeling data file into R. First, we standardize the column across both the `model.data` and `predict.data` files for continuity purposes,
+
+```{r column-names}
+colnames(model.data) <- tolower(colnames(model.data))
+colnames(evaluation.data) <- tolower(colnames(evaluation.data))
+kable(cbind("modeling data"=colnames(model.data)[1:5],"evaluation data"=colnames(evaluation.data)[1:5]), caption="column names") |> kable_styling()
+```
+
+# Exploratory Data Analysis
+
+We need to take a look at what kinds of predictors we are dealing with,
+
+```{r}
+kable(table(sapply(model.data, class)), col.names=c("type","count")) |> kable_styling()
+```
+
+We have 32 numeric predictors and 1 categorical predictor.
+
+```{r}
+model.data |>
+  select(where(is.character)) |>
+  table() |>
+  kable() |>
+  kable_styling()
+```
+
+The `brand.code` variable is our categorical predictor, we can see there are some blank values, we will have to decide what to do with those.
+
+```{r}
+model.data |>
+  select(where(is.character)) |>
+  table() |>
+  prop.table() |>
+  barplot(main="Distribution of Brand Codes", col="lightblue", ylab="Freq")
+```
+
+We can see the distribution of the categorical predictor is not degenerative.
+
+Let's take a look at the distribution of the numerical predictors.
+
+```{r numerical-distribution, warning=FALSE, cache=TRUE}
+model.data |>
+  select(-c(ph,brand.code)) |>
+  gather(key = "predictor", value = "value") |>
+  ggplot(aes(x = value)) +
+  geom_density(fill="lightblue") +
+  facet_wrap(~ predictor, scales = "free") +
+  theme_minimal() + 
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
+
+We can observe that there is either bimodality or skew in most of the variables, suggesting a nonlinear model is appropriate. Because of the bimodality, violin plots are preferable than boxplots to observe any outliers,
+
+```{r violin-plots, warning=FALSE, message=FALSE, cache=TRUE}
+model.data |>
+  select(-c(ph,brand.code)) |>
+  gather(key = "predictor", value = "value") |>
+  ggplot(aes(x = predictor, y = value)) +
+  geom_violin(fill="lightblue") +
+  facet_wrap(~ predictor, scales = "free") +
+  coord_flip() + 
+  theme_minimal() + 
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
+
+The bi-modality appears to account for most of the distributions, however there are some outliers in `mfr`, `filler.speed`, `air.pressurer`, and `bowl.setpoint` that need to be dealt with.
+
+Now let's take a look at the relationship between the numerical predictors and response,
+
+```{r feature-plot, fig.height = 8}
+featurePlot(x = select(model.data, -c(ph, brand.code)),
+            y = model.data$ph,
+            plot = "scatter",
+            layout = c(6, 6),
+            col = "lightblue")
+```
+
+We can see there is no linear relationship between the predictors and response.
+
+Now we take a look at the NAs,
+
+```{r proportion-of-nas}
+nas <- colMeans(is.na(model.data))
+
+data.frame(variable = names(nas), missing = nas, row.names = NULL) |>
+  ggplot(aes(y=reorder(variable,missing), x=missing)) +
+  geom_col(fill="lightblue") +
+  ggtitle('proportion of missing values') + xlab('') + ylab('')
+```
+
+```{r}
+data.frame(variable = names(nas), pct_missing = round(nas * 100,2), row.names = NULL) |>
+  arrange(desc(nas)) |>
+  head(10) |>
+  kable() |>
+  kable_styling()
+
+```
+
+8.25% of the `mfr` variable is missing, we may decide to drop this variable.
+
+Let's check for correlation amongst the predictors,
+
+```{r correlation-matrix}
+model.data |>
+  select(-brand.code) |>
+  cor(use = "complete") |>
+  corrplot(order = "alphabet",
+           tl.cex = 0.5,
+           type = "lower")
+```
+
+We can see that there is some collinearity amongst the following predictors.
+
+```{r, warning=FALSE, message=FALSE}
+highCorr <- model.data |>
+  select(-c(ph, brand.code)) |>
+  cor(use = "complete") |>
+  findCorrelation(cutoff = 0.75)
+  
+model.data |>
+  select(highCorr) |>
+  cor(use = "complete") |>
+  colnames() |>
+  sort() |>
+  cat(sep = "\n")
+```
+Now we check for zero variance features which will add little predictive value to a model, 
+
+```{r near-zero-var}
+nearZeroVar(model.data, saveMetrics=TRUE) |>
+  select(nzv) |>
+  filter(nzv == TRUE) |>
+  row.names()
+```
+
+We will remove this variable during the data prep phase. 
+
+# Data Prep
+
+The following steps are employed to prepare the data for modeling:
+
+-   Convert `brand.code` variable to factor and create dummy variables
+-   Remove Unnecessary Fields
+-   Drop and/or impute NA values.
+-   Center and scale data
+-   Box-Cox transformation to deal with skewness
+-   Partition data into training and testing sets
+
+### Remove Fields
+
+We drop the `mfr` and `hyd.pressure1` variables and filter out the empty `brand.code` observations
+
+```{r drop-variables}
+md.clean <- model.data |>
+  select(-c(mfr, hyd.pressure1)) |>
+  filter(brand.code != "")
+```
+
+### Convert Data Types
+
+First we convert the `brand.code` predictor to factor so we can convert it to dummy variables,
+
+```{r}
+md.clean$brand.code <- as.factor(md.clean$brand.code)
+glimpse(md.clean$brand.code)
+```
+
+
+### Missing Values
+
+- Remove the observations with NA in the `ph` column.
+- Impute remaining NAs
+
+```{r remove-nas}
+md.clean <- md.clean |>
+  filter(!is.na(ph)) |>
+  filter(brand.code != "")
+
+colSums(is.na(select(md.clean, c(ph, brand.code))))
+```
+
+### Create Dummy Variables
+
+We create dummy variables for the `brand.code` predictor,
+
+```{r create-dummies}
+md.dummies <- dummyVars(ph ~ brand.code, md.clean, levelsOnly=TRUE)
+dummies <- predict(md.dummies, md.clean)
+
+md.clean <- cbind(md.clean, dummies) |>
+  select(-brand.code)
+```
+
+### Data Imputation
+
+Next we impute the missing values using knn imputation.
+
+```{r imputation}
+set.seed(1)
+md.imputed <- knnImputation(md.clean, k=5)
+sum(is.na(md.imputed))
+```
+
+Now we split our data into training and testing sets using an 80/20 split,
+
+```{r split-data}
+set.seed(1)
+
+# set split index 
+split.index <- createDataPartition(md.imputed$ph, p = .8, list = FALSE)
+
+# split data and partition predictor (x) and response (y) sets
+train.x <- md.imputed[split.index, ] |> select(-ph)
+train.y <- md.imputed[split.index, ]$ph
+
+test.x <- md.imputed[-split.index, ] |> select(-ph)
+test.y <- md.imputed[-split.index, ]$ph
+```
+
+# Data Modeling
+
+We use 10-fold cross validation to resample our data and enable parallel processing for our modeling,
+
+```{r, cache=TRUE}
+ctrl <- trainControl(method = "cv", 
+                     number = 10, 
+                     allowParallel = TRUE)
+
+cl <- makeCluster(4)
+registerDoParallel(cl)
+```
+
+We create a function for extracting the MAPE (Mean Absolute Percentage Error) along with RMSE, Rsquared, and MAE of our predictions and actual data,
+
+```{r}
+metrics <- function(predicted, actual){
+  mape = accuracy(predicted, actual)['Test set','MAPE']
+  measures = postResample(predicted, actual) 
+  metrics = c(measures, MAPE=mape)
+  return(metrics)
+}
+```
+
+## Selecting a Model {.tabset}
+
+### Linear Model
+
+```{r linear-model, cache=TRUE}
+set.seed(1)
+
+lm.model <- train(train.x, train.y,
+                  method = "lm",
+                  preProcess = c("BoxCox","center","scale"),
+                  trControl = ctrl,
+                  tuneLength = 10)
+
+lm.preds <- predict(lm.model, test.x)
+lm.results <- metrics(lm.preds, test.y)
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Partial Least Squares
+
+```{r pls-model, cache = TRUE}
+set.seed(1)
+
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+pls.model <- train(train.x, train.y,
+                   method = "pls",
+                   preProcess = c("BoxCox","center","scale"),
+                   trControl = ctrl,
+                   tuneLength = 10)
+
+pls.preds <- predict(pls.model, test.x)
+pls.results <- metrics(pls.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Ridge Regression    
+
+```{r ridge-model, cache=TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+ridge.grid <- data.frame(.lambda = seq(0, .1, length = 15))
+
+set.seed(100)
+
+ridge.model <- train(train.x, train.y,
+                     method = "ridge",
+                     preProcess = c("BoxCox","center","scale"),
+                     tuneGrid = ridge.grid,
+                     trControl = ctrl
+                     )
+
+ridge.preds <- predict(ridge.model, test.x)
+ridge.results <- metrics(ridge.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Elastic Net
+
+```{r elastic-net, cache=TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+enet.grid <- expand.grid(.lambda = c(0, 0.01, .1),
+                         .fraction = seq(.05, 1, length = 20))
+
+set.seed(1)
+
+enet.model <- train(train.x, train.y,
+                    method = "enet",
+                    preProcess = c("BoxCox","center","scale"),
+                    tuneGrid = enet.grid,
+                    trControl = ctrl)
+
+enet.preds <- predict(enet.model, test.x)
+enet.results <- metrics(enet.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+
+### K-Nearest Neighbors
+
+```{r knn-model, cache = TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+set.seed(2)
+
+# remove a few sparse and unbalanced fingerprints first
+#knnDescr <- train.x[, -nearZeroVar(train.x)]
+
+knn.model <- train(train.x, train.y,
+                   method = "knn",
+                   preProcess = c("BoxCox","center","scale"),
+                   trControl = ctrl,
+                   tuneLength = 10)
+
+knn.preds <- predict(knn.model, test.x) 
+knn.results <- metrics(knn.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Neural Network 
+
+First we check the correlation amongst the numerical predictors, filtering out for pairwise correlation above 0.75,
+
+```{r}
+highCorr <- findCorrelation(cor(train.x[,!names(train.x) %in% 'brand.code']), cutoff = .75)
+train.x.nnet <- train.x[, -highCorr]
+test.x.nnet <- test.x[, -highCorr]
+```
+
+Next we model the data,
+
+```{r nnet-model, cache = TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+set.seed(1)
+
+nnetGrid <- expand.grid(.decay = c(.1,.5),
+                        .size = c(1:10),
+                        .bag = FALSE)
+
+nnet.model <- train(train.x.nnet, train.y,
+                    method = "avNNet",
+                    preProcess = c("BoxCox","center","scale"),
+                    tuneGrid = nnetGrid,
+                    trControl = ctrl,
+                    linout = TRUE,
+                    trace = FALSE,
+                    maxit = 100)
+
+nnet.preds <- predict(nnet.model, test.x.nnet)
+nnet.results <- metrics(nnet.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### MARS
+
+```{r mars-model, warning = FALSE, message = FALSE, cache = TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+set.seed(1)
+
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+mars.model <- train(train.x, train.y,
+                    method = "earth",
+                    preProcess = c("BoxCox","center","scale"),
+                    tuneGrid = marsGrid,
+                    trControl = ctrl)
+
+mars.preds <- predict(mars.model, test.x)
+mars.results <- metrics(as.numeric(mars.preds), test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### SVM
+
+```{r svm-model, warning=FALSE, cache=TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+set.seed(1)
+
+svmR.model <- train(train.x, train.y,
+                    method = "svmRadial",
+                    preProcess = c("BoxCox","center","scale"),
+                    trControl = ctrl)
+
+svmR.preds <- predict(svmR.model, test.x)
+svmR.results <- metrics(svmR.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Single Tree      
+
+```{r single-tree-regression, warning=FALSE, cache=TRUE}
+set.seed(100)
+
+rpart.model <- train(train.x, train.y,
+                     method = "rpart",
+                     preProcess = c("BoxCox","center","scale"),
+                     tuneLength = 10)
+
+rpart.preds <- predict(rpart.model, test.x)
+rpart.results <- metrics(rpart.preds, test.y)
+```
+
+### Bagged Trees    
+
+```{r bagged-trees, warning=FALSE, cache=TRUE}
+set.seed(100)
+
+bagged.model <- train(train.x, train.y,
+                      method = "treebag",
+                      preProcess = c("BoxCox","center","scale"),
+                      tuneLength = 10)
+
+bagged.preds <- predict(bagged.model, test.x)
+bagged.results <- metrics(bagged.preds, test.y)
+```
+
+
+### Random Forest    
+
+```{r random-forest, warning=FALSE, cache=TRUE}
+set.seed(1)
+
+rf.model <- randomForest(train.x, train.y,
+                         preProcess = c("BoxCox","center","scale"),
+                         importance = TRUE,
+                         ntree = 1000)
+
+rf.preds <- predict(rf.model, test.x)
+rf.results <- metrics(rf.preds, test.y)
+```
+
+### Gradient Boosting   
+
+```{r gbm-model, cache=TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+gbm.grid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
+                        n.trees = seq(100, 1000, by = 50),
+                        shrinkage = c(0.01, 0.1),
+                        n.minobsinnode = 10)
+
+set.seed(100)
+
+parallel.config <- trainControl(method = "none", allowParallel = TRUE)
+
+gbm.model <- train(train.x, train.y,
+                  method = "gbm",
+                  preProcess = c("BoxCox","center","scale"),
+                  tuneGrid = gbm.grid,
+                  verbose = FALSE,
+                  trControl = ctrl)
+
+gbm.preds <- predict(gbm.model, test.x)
+gbm.results <- metrics(gbm.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+### Cubist   
+
+```{r cubist-model, warning=FALSE, cache=TRUE}
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+set.seed(1)
+
+cubist.model <- train(train.x, train.y,
+                      method = "cubist",
+                      preProcess = c("BoxCox","center","scale"),
+                      trControl = ctrl)
+
+cubist.preds <- predict(cubist.model, test.x)
+cubist.results <- metrics(cubist.preds, test.y)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+
+## Model Metrics
+
+```{r model-metrics}
+results <- rbind("linear model" = lm.results,
+"partial least squares" = pls.results,
+"ridge regression" = ridge.results,
+"elastic net" = enet.results,
+"knn" = knn.results,
+"neural network" = nnet.results,
+"mars" = mars.results,
+"svm" = svmR.results,
+"single tree regression" = rpart.results,
+"bagged trees" = bagged.results,
+"random forest" = rf.results,
+"gradient boosting" = gbm.results,
+"cubist" = cubist.results )
+
+results |> 
+  data.frame() |>
+  arrange(MAPE) |>
+  kable() |>
+  kable_styling()
+```
+
+The cubist model has the best performance by all metrics.
