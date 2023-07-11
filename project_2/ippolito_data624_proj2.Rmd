@@ -1684,10 +1684,9 @@ dfr %>%
 
 ```
 
-Our preliminary runs show that tree-based models were the best performers by a significant margin. Nonlinear regression-based models outperformed those that are linear based, but were still outclassed by the tree-based models. The Cubist and random forest models were the top performers, followed by the stochastic gradient boosted tree and regression model tree. It is not surprising that the tree-based models performed better when fed the full data set, as there was a richer feature set to inform the outcome. It was, however, surprising that the test data set outperformed the training set; typically models perform slighly worse at data they haven't encountered before. This was the case with the linear and nonlinear regression-based models.
+Our preliminary runs show that tree-based models were the best performers by a significant margin. Nonlinear regression-based models outperformed those that are linear based, but were still outclassed by the tree-based models. The Cubist and random forest models were the top performers, followed by the stochastic gradient boosted tree and regression model tree. It is not surprising that the tree-based models performed better when fed the full data set, as there was a richer feature set to inform the outcome. It was, however, surprising that the test data set outperformed the training set; typically models perform slightly worse against data they haven't encountered before. This was the case with the linear and nonlinear regression-based models.
 
-While our modeling yielded very good results by the top performers, we'll take a closer look at the top two models to see if there are ways to improve it. As indicated above, the top two performers were the Cubist model run against the full data set with 100 committees and five neighbors, and the random forest model with 27 predictors, also run against the full data set.
-
+We also gauged accuracy against how long it took to train the various models (see plot below). As expected, the more accurate models generally took much longer to run than those that were less accurate. With a run time approaching 4 minutes, the model with the best MAPE score was also one of the longest to train, despite using 8 Pentium i5 processing cores on the modeling machine.
 
 ```{r}
 
@@ -1701,26 +1700,17 @@ dfr %>%
 
 ```
 
+It should be noted that if this model is to be used in a real-time, production environment, a model with faster runtimes would be preferred over those that perform better but are slower to train.
 
+### Model selection
 
-```{r}
+While our modeling yielded very good results by the top performers, we'll take a closer look at the top two models to see if there are ways to improve it before selecting a final model. As indicated above, the top two performers were the Cubist model run against the full data set with 100 committees and five neighbors, and the random forest model with 26 predictors, also run against the full data set.
 
-# todo:
+Because it was unclear whether the missing values in the categorical variable (Brand.Code) were intentionally uncoded or indeed missing, we decided to try rerunning the top two best-performing models after adjusting this variable. On the first run, we dropped the variable altogether. On the second run, we recoded missing Brand.Code values as "U" to represent unbranded products.
 
-# try to tweak the top model(s) to get better mape
-# varImp of the top model(s)
-# plots of the top model(s)
-# model writeups
-# prepare eval data
-# predict eval data
+```{r warning=F}
 
-```
-
-
-
-```{r}
-
-# Cubist - full set - drop Brand.Code
+# Rerun top 2 models - full set, but drop Brand.Code
 dfm_nobrand <- dfm_full %>%
     select(-starts_with('Brand.Code'))
 
@@ -1751,7 +1741,7 @@ telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
 fitcub_nobrand
 predcub_nobrand <- predict(fitcub_nobrand, testx_nobrand)
 dfr[37,] <- data.frame(
-    Data.Set='No Brand.Code',
+    Data.Set='Rerun (no Brand.Code)',
     Model='Cubist', 
     Model.Class='Tree',
     Tuning.Parameters=paste0('committees=', fitcub_nobrand$bestTune[['committees']], 
@@ -1762,36 +1752,182 @@ dfr[37,] <- data.frame(
     Train.Time=round(telapsed, 3)
 )
 
+# Random Forest
+tstart <- Sys.time()
+set.seed(77)
+fitrf_nobrand <- train(trainx_nobrand, trainy_nobrand, method='rf',  tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
+fitrf_nobrand
+predrf_nobrand <- predict(fitrf_nobrand, testx_nobrand)
+dfr[39,] <- data.frame(
+    Data.Set='Rerun (no Brand.Code)',
+    Model='Random forest', 
+    Model.Class='Tree',
+    Tuning.Parameters=paste0('mtry=', fitrf_nobrand$bestTune[['mtry']]), 
+    Train.RMSE=min(fitrf_nobrand$results[['RMSE']]),
+    RMSE.Test=postResample(predrf_nobrand, testy_nobrand)[['RMSE']],
+    MAPE.Test=mape(predrf_nobrand, testy_nobrand),
+    Train.Time=round(telapsed, 3)
+)
+
 # Stop the parallel processing cluster
 stopCluster(cl)
 
 ```
 
+```{r warning=F}
 
+# Rerun top 2 models - full set, but add uncoded Brand.Code values as U
+
+# Init the full data set
+dfm_unbrand <- dfm
+
+# Remove observation with 12 missing values
+dfm_unbrand <- dfm_unbrand[(rowSums(is.na(dfm_unbrand)) < 12),]
+
+# Remove the MFR predictor because it has 212 missing values (8.2% of the data)
+dfm_unbrand <- dfm_unbrand %>% select(-MFR)
+
+# Recode blank brand codes as "U"
+dfm_unbrand <- dfm_unbrand %>%
+    mutate(Brand.Code=ifelse(Brand.Code=='', 'U', as.character(Brand.Code)))
+
+# Factor Brand.Code (needed for imputation)
+dfm_unbrand$Brand.Code <- factor(dfm_unbrand$Brand.Code)
+
+# Use knnImputation to impute values
+dfm_unbrand <- knnImputation(dfm_unbrand, k=9)
+
+# Create dummies for factor and character variables
+dfm_unbrand <- dummy_cols(dfm_unbrand, select_columns='Brand.Code', remove_first_dummy=F, remove_selected_columns=T)
+
+# Create vector of training rows
+set.seed(77)
+train_rows <- createDataPartition(dfm_unbrand$PH, p=0.8, list=F)
+
+# Separate training from test
+dfm_unbrand_train <- dfm_unbrand[train_rows,]
+dfm_unbrand_test <- dfm_unbrand[-train_rows,]
+
+# Separate outcome from predictors
+trainx_unbrand <- dfm_unbrand_train[,2:ncol(dfm_unbrand_train)]
+trainy_unbrand <- dfm_unbrand_train[,1]
+testx_unbrand <- dfm_unbrand_test[,2:ncol(dfm_unbrand_test)]
+testy_unbrand <- dfm_unbrand_test[,1]
+
+# Parallel processing
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+# Cubist - full set - wider range of neighbors and committees
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+tstart <- Sys.time()
+set.seed(77)
+fitcub_unbrand <- train(trainx_unbrand, trainy_unbrand, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
+fitcub_unbrand
+predcub_unbrand <- predict(fitcub_unbrand, testx_unbrand)
+dfr[38,] <- data.frame(
+    Data.Set='Rerun (keep unbranded)',
+    Model='Cubist', 
+    Model.Class='Tree',
+    Tuning.Parameters=paste0('committees=', fitcub_unbrand$bestTune[['committees']], 
+                             ', neighbors=', fitcub_unbrand$bestTune[['neighbors']]), 
+    Train.RMSE=min(fitcub_unbrand$results[['RMSE']]),
+    RMSE.Test=postResample(predcub_unbrand, testy_unbrand)[['RMSE']],
+    MAPE.Test=mape(predcub_unbrand, testy_unbrand),
+    Train.Time=round(telapsed, 3)
+)
+
+# Random Forest
+tstart <- Sys.time()
+set.seed(77)
+fitrf_unbrand <- train(trainx_unbrand, trainy_unbrand, method='rf',  tuneLength=10, trControl=ctrl)
+telapsed <- as.numeric(difftime(Sys.time(), tstart ,units='secs'))
+fitrf_unbrand
+predrf_unbrand <- predict(fitrf_unbrand, testx_unbrand)
+dfr[40,] <- data.frame(
+    Data.Set='Rerun (keep unbranded)',
+    Model='Random forest', 
+    Model.Class='Tree',
+    Tuning.Parameters=paste0('mtry=', fitrf_unbrand$bestTune[['mtry']]), 
+    Train.RMSE=min(fitrf_unbrand$results[['RMSE']]),
+    RMSE.Test=postResample(predrf_unbrand, testy_unbrand)[['RMSE']],
+    MAPE.Test=mape(predrf_unbrand, testy_unbrand),
+    Train.Time=round(telapsed, 3)
+)
+
+# Stop the parallel processing cluster
+stopCluster(cl)
+
+```
 
 ```{r}
 
 # Reprint top results
-dfr %>%
+dfr[c(16,18,34,36,37:40),] %>%
     arrange(MAPE.Test) %>%
     select(Model, Data.Set, Tuning.Parameters, Train.Time, RMSE.Train, RMSE.Test, MAPE.Test) %>%
-    head(5) %>%
     flextable() %>%
     width(width = 2) %>%
     fontsize(size = 10) %>%
     line_spacing(space = 1) %>%
     hline(part = "all") %>%
-    set_caption('Top 5 Modeling Results')
+    set_caption('Cubist/Random forest results (including reruns)')
 
 ```
+
+As shown, rerunning the models using different Brand.Code combinations did not improve the MAPE of the models run with the full data set. As such, the top-performing model remains the Cubist model run against the full data set (imputing missing Brand.Code values), having 100 committees and five neighbors. As shown on the plot below, performance drops sharply from 0 to around 5 committees, followed by a more gradual decline thereafter. Assuming that more committees means longer runtimes, it would be feasible to decrease the number of committees from 100 to 20 and still obtain almost equivalent performance. But if runtime isn't a concern, we recommend 100 committees.
+
+```{r}
+
+# Plot
+plot(fitcub_full)
+
+```
+
+### Variable importance
+
+Having selected the optimal model, we'll examine the importance of individual predictors within the model.
+
+```{r}
+
+# Variable importance - cubist full set
+tmpdf <- varImp(fitcub_full)$importance
+tmpdf$Variable <- row.names(tmpdf)
+tmpdf %>%
+    select(Variable, Overall) %>%
+    arrange(desc(Overall)) %>%
+    head(10) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Top 10 variables - Cubist model (full set)')
+
+```
+
+As shown, Mnf.Flow was the most informative predictor in the model, followed by Bailing.Lvl and Alch.Rel. *[discuss what the variable importance value means]*
+
+from the docs:
+
+Cubist: The Cubist output contains variable usage statistics. It gives the percentage of times where each variable was used in a condition and/or a linear model. Note that this output will probably be inconsistent with the rules shown in the output from summary.cubist. At each split of the tree, Cubist saves a linear model (after feature selection) that is allowed to have terms for each variable used in the current split or any split above it. Quinlan (1992) discusses a smoothing algorithm where each model prediction is a linear combination of the parent and child model along the tree. As such, the final prediction is a function of all the linear models from the initial node to the terminal node. The percentages shown in the Cubist output reflects all the models involved in prediction (as opposed to the terminal models shown in the output). The variable importance used here is a linear combination of the usage in the rule conditions and the model.
+
+## Evaluation data
 
 
 
 ```{r}
 
+# todo:
 
+# model writeups
+# prepare eval data
+# predict eval data
 
 ```
+
 
 
 
