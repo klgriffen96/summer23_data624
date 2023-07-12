@@ -1,16 +1,19 @@
 ---
 title: "ippolito_data624_proj2"
 author: "Michael Ippolito"
-date: "2023-07-04"
+date: '2023-07-04'
 output:
+  word_document:
+    toc: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
   html_document:
     theme: yeti
     highlight: tango
     toc: yes
     toc_float: yes
-  pdf_document:
-    dev: cairo_pdf
-    toc: yes
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
@@ -1755,7 +1758,7 @@ dfr %>%
 
 Our preliminary runs show that tree-based models were the best performers by a significant margin. Nonlinear regression-based models outperformed those that are linear based, but were still outclassed by the tree-based models. The Cubist and random forest models were the top performers, followed by the stochastic gradient boosted tree and regression model tree. It is not surprising that the tree-based models performed better when fed the full data set, as there was a richer feature set to inform the outcome. It was, however, surprising that the test data set outperformed the training set; typically models perform slightly worse against data they haven't encountered before. This was the case with the linear and nonlinear regression-based models.
 
-We also gauged accuracy against how long it took to train the various models (see plot below). As expected, the more accurate models generally took much longer to run than those that were less accurate. With a run time approaching 4 minutes, the model with the best MAPE score was also one of the longest to train, despite using 8 Pentium i5 processing cores on the modeling machine.
+We also gauged accuracy against how long it took to train the various models (see plot below). As expected, the more accurate models generally took much longer to run than those that were less accurate.The model with the best MAPE score was also one of the longest to train.
 
 ```{r}
 
@@ -2106,7 +2109,6 @@ The proportion of outliers also seems to be similar to that of the training set.
 
 Now that we've verified the evaluation data is on par with the training data, we'll proceed with data preparation. Since our best-performing model used the full data set, we'll perform the same steps on the evaluation set that we used earlier on the full training set, namely the following:
 
-1) Remove the row with a large number of missing values (14 in this case).
 1) Remove the MFR predictor because it has a high proportion of missing values (31 values, or 11.6% of the data).
 1) Change the blank brand codes to NA so that they will be imputed.
 1) Impute the missing values using KNN imputation.
