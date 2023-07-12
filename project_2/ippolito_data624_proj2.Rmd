@@ -40,6 +40,14 @@ theme_set(theme_minimal())
 
 ```
 
+## Introduction
+
+*[insert problem description here]*
+
+## Executive Summary
+
+*[insert exec summary here]*
+
 ## Exploratory Data Analysis
 
 ### Load Data
@@ -547,14 +555,14 @@ It is important to note that some models are sensitive to the numbers of observa
 
 ### Reduced data set
 
-Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities. We'll first make a copy of the full set. Then we'll need to remove one of the Brand.Code columns, as having all categories of a categorical variable will be problemmatic for linear-based models.
+Now that we have a full data set will missing values handled, we can generate a second, reduced set to use with models that are sensitive to irregularities. We'll first make a copy of the full set. Then we'll need to remove one of the Brand.Code columns, as having all categories of a categorical variable will be problematic for linear-based models.
 
 ```{r}
 
 # First, make a copy the full set to the reduced set
 dfm_red <- dfm_full
 
-# Remove the first dummy Brand.Code from the reduced set, since this will be problemmatic for linear models which use a y-intercept
+# Remove the first dummy Brand.Code from the reduced set, since this will be problematic for linear models which use a y-intercept
 dfm_red <- dfm_red %>%
     select(-Brand.Code_A)
 
@@ -1916,26 +1924,224 @@ Cubist: The Cubist output contains variable usage statistics. It gives the perce
 
 ## Evaluation data
 
+Before we generate predictions on the evaluation data set, we'll take do some cursory exploratory data analysis to verify that the evaluation data set isn't vastly different than the training set.
 
-
-```{r}
-
-# todo:
-
-# model writeups
-# prepare eval data
-# predict eval data
-
-```
-
-
-
+### Exploratory data analysis
 
 ```{r}
 
-
+# Move outcome variable pH to front for easier access
+dfe <- dfe_raw %>%
+    dplyr::select(PH, !matches('Brand.Code'), Brand.Code)
+summary(dfe)
 
 ```
+
+At first glance the evaluation set appears to be roughly on par with the training set. A number of missing values exist, but not in vast proportions.
+
+```{r}
+
+# Factor categorical variable Brand.Code
+dfe$Brand.Code <- factor(dfe$Brand.Code)
+
+# Generate corr plot for pairwise correlations
+corr1 <- cor(dfe[,2:(ncol(dfe)-1)], use='complete')
+corrplot::corrplot(corr1, method='square', order='hclust', type='full', diag=T, tl.cex=0.75, cl.cex=0.75)
+
+```
+
+Like the training set data, some collinearity exists between pairs of variables. The same variables appear to be correlated as in the training set:
+
+- Carb.Volume
+- Carb.Rel
+- Alch.Rel
+- Density
+- Bailing
+- Bailing.Lvl
+
+```{r}
+
+# Count NAs per column
+missing_values <- data.frame(colSums(is.na(dfe[,-1])))
+missing_values$Variable <- row.names(missing_values)
+colnames(missing_values) <- c('Missing.values', 'Variable')
+missing_values %>%
+    dplyr::select(Variable, Missing.values) %>%
+    arrange(desc(Missing.values)) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Missing values')
+
+# Missing value patterns
+md.pattern(dfe[,-1], rotate.names=T, plot=T)
+
+```
+
+Missing values also appear to be on par with the training set, with MFR having the most missing values. There is one observation that contains 14 missing values, but since we'll need to predict against every row in the evaluation set, we won't remove it.
+
+```{r warning=F, fig.width=10, fig.height=8}
+
+# Generate histograms of continuous variables
+dfe %>%
+    dplyr::select(c(2:(ncol(dfe)-1))) %>%
+    gather() %>%
+    ggplot(aes(x=value)) +
+    geom_histogram(bins=20) +
+    facet_wrap(~key, scales = 'free_x') +
+    ggtitle('Histograms of continuous variables')
+
+# Calculate skewness on columns
+colskewness <- data.frame(apply(dfe[,2:(ncol(dfe)-1)], 2, calcSkewness, type=1))
+colskewness$Variable <- row.names(colskewness)
+colnames(colskewness) <- c('Skewness', 'Variable')
+
+# Graph skewness values
+colskewness %>%
+    dplyr::select(Variable, Skewness) %>%
+    arrange(desc(abs(Skewness))) %>%
+    ggplot(aes(x=reorder(Variable, desc(Skewness)), y=Skewness)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    ggtitle('Variable skewness') +
+    xlab('')
+
+```
+
+Roughly the same variables appear to be skewed.
+
+```{r}
+
+# Set multiplier; outliers are considered as such when they lie outside of (multiplier) standard deviations from the mean
+mult <- 3
+outliers <- apply(dfe[,2:(ncol(dfe)-1)], 2, getOutliers, mult=mult)
+dfout <- data.frame(outliers)
+dfout <- data.frame(colSums(outliers))
+dfout$Variable <- row.names(dfout)
+colnames(dfout) <- c('Outlier.count', 'Variable')
+
+# Filter just those variables with outliers and sort by outlier count
+dfout <- dfout %>%
+    dplyr::select(Variable, Outlier.count) %>%
+    arrange(desc(Outlier.count)) %>%
+    filter(Outlier.count > 0)
+
+# Generate bar graph of outlier counts
+dfout %>%
+    ggplot(aes(x=reorder(Variable, Outlier.count), y=Outlier.count, label=Outlier.count)) +
+    geom_bar(stat='identity') +
+    coord_flip() +
+    geom_text(check_overlap=T, hjust=-0.1, nudge_x=0.05) +
+    ggtitle('Outliers (only variables with outliers shown)') +
+    xlab('') + ylab('Outlier count')
+
+```
+
+The proportion of outliers also seems to be similar to that of the training set.
+
+### Data preparation
+
+Now that we've verified the evaluation data is on par with the training data, we'll proceed with data preparation. Since our best-performing model used the full data set, we'll perform the same steps on the evaluation set that we used earlier on the full training set, namely the following:
+
+1) Remove the row with a large number of missing values (14 in this case).
+1) Remove the MFR predictor because it has a high proportion of missing values (31 values, or 11.6% of the data).
+1) Change the blank brand codes to NA so that they will be imputed.
+1) Impute the missing values using KNN imputation.
+1) Create dummy variables for the Brand.Code predictor.
+
+```{r}
+
+# Init data frame, removing outcome variable, PH
+dfe_eval <- dfe[,-1]
+
+# Remove the MFR predictor because it has a high proportion of missing data
+dfe_eval <- dfe_eval %>% select(-MFR)
+
+# Change blank brand codes to NA so they will be imputed
+dfe_eval <- dfe_eval %>%
+    mutate(Brand.Code=ifelse(Brand.Code=='', NA, as.character(Brand.Code)))
+
+# Factor Brand.Code (needed for imputation)
+dfe_eval$Brand.Code <- factor(dfe_eval$Brand.Code)
+
+# Use knnImputation to impute values
+dfe_eval <- knnImputation(dfe_eval, k=9)
+
+# Create dummies for factor and character variables
+dfe_eval <- dummy_cols(dfe_eval, select_columns='Brand.Code', remove_first_dummy=F, remove_selected_columns=T)
+
+```
+
+After preparing the data, we have 266 observations in 34 variables. The data is now ready for prediction.
+
+### Prediction
+
+To predict pH in the evaluation data set, we'll use the modeling results from the top performing model (Cubist run against the full data set). The first few predicted values are included below.
+
+```{r}
+
+# Predict using the Cubist full model
+pred_eval <- predict(fitcub_full, dfe_eval)
+df_ph <- data.frame(pred_eval)
+colnames(df_ph) <- c('PH')
+
+# Show first few values
+data.frame(pred_eval) %>%
+    head(10) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Predicted pH (first few values)') %>%
+    delete_part( part = "header")
+
+# Save to csv
+write.csv(df_ph, 'predicted_ph.csv', row.names=F)
+
+```
+
+We'll also generate some summary statistics for comparison purposes.
+
+```{r}
+
+# Generate summary stats for predicted pH values
+tmpdf <- data.frame(as.matrix(summary(pred_eval)))
+tmpdf$Statistic <- row.names(tmpdf)
+colnames(tmpdf) <- c('Evaluation', 'Statistic')
+tmpdf <- tmpdf %>%
+    rbind(data.frame(Evaluation=sd(pred_eval), Statistic='Std dev'))
+
+# Generate summary stats for training pH values
+tmpdfm <- data.frame(as.matrix(summary(dfm_full$PH)))
+tmpdfm$Statistic <- row.names(tmpdfm)
+colnames(tmpdfm) <- c('Training', 'Statistic')
+tmpdfm <- tmpdfm %>%
+    rbind(data.frame(Training=sd(dfm_full$PH), Statistic='Std dev'))
+
+# Merge the summary stats to display in a table
+tmpdf2 <- tmpdfm %>%
+    merge(tmpdf, by=c('Statistic'))
+
+# Display summary
+tmpdf2 %>%
+    select(Statistic, Training, Evaluation) %>%
+    flextable() %>%
+    width(width = 2) %>%
+    fontsize(size = 10) %>%
+    line_spacing(space = 1) %>%
+    hline(part = "all") %>%
+    set_caption('Comparison of pH statistics')
+
+```
+
+As shown in the table above, the mean, median, and first and third quartiles are all roughly even between the training and evaluation data. The minimum, maximum, and standard deviation of the training data show a wider range than that of the evaluation data, but this is natural given the greater number of samples in the training set.
+
+## Conclusion
+
+*[insert cool text here]*
 
 ## References
 
