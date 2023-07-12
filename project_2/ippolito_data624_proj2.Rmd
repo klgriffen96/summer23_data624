@@ -34,6 +34,7 @@ library(ipred)
 library(gbm)
 library(Cubist)
 library(doParallel)
+library(kableExtra)
 
 # Set minimal theme
 theme_set(theme_minimal())
@@ -78,6 +79,10 @@ summary(dfm)
 
 ```
 
+```{r}
+kable(table(sapply(dfm_raw, class)), col.names=c("type","count")) |> kable_styling()
+```
+
 We note several things from a cursory first glance:
 
 1) There are 2571 observations in 33 variables.
@@ -86,9 +91,31 @@ We note several things from a cursory first glance:
 1) There are a number of missing values but not at a rate that would be debilitating to fitting a model to the data. Additional investigation will be done to determine how best to handle these data points.
 1) Little information was given about the data, so we can't infer units for the variables (for example, it is unknown whether the temperature and pressure variables are in English or metric units).
 
+Let's take a look at the distribution of the numerical predictors.
+
+```{r numerical-distribution, warning=FALSE, cache=TRUE}
+dfm_raw |>
+  select(-c(PH,Brand.Code)) |>
+  gather(key = "predictor", value = "value") |>
+  ggplot(aes(x = value)) +
+  geom_density(fill="lightblue") +
+  facet_wrap(~ predictor, scales = "free") +
+  theme_minimal() + 
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
+
 We'll need to do a small amount of data preparation first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later). This will only be useful for initial data exploration; for modeling purposes, we'll need to handle this variable differently (see Data Preparation below).
 
 ```{r}
+
+dfm |>
+  select(where(is.character)) |>
+  table() |>
+  prop.table() |>
+  barplot(main="Distribution of Brand Codes", col="lightblue", ylab="Freq")
 
 # Factor categorical variable Brand.Code
 dfm$Brand.Code <- factor(dfm$Brand.Code)
@@ -276,6 +303,17 @@ md.pattern(dfm, rotate.names=T, plot=T)
 
 As shown, there are 2129 observations for which no values are missing, or 82.8% of the data. We note that there are only a few rows with many red squares, indicating that there aren't many observations missing a significant number of variables. There is only a single observation that had missing values numbering in the double digits of predictors (12); this row is likely a good candidate for removal. In addition, one of the predictors (MFR) contained a significant number of missing values across all observations (212 values, or 8.2% of the data) and should likely be removed. The remaining data can be imputed (filled in) using one of the statistical methods listed above.
 
+Another way to see this clearly is with a column chart.
+
+```{r proportion-of-nas}
+nas <- colMeans(is.na(dfm))
+
+data.frame(variable = names(nas), missing = nas, row.names = NULL) |>
+  ggplot(aes(y=reorder(variable,missing), x=missing)) +
+  geom_col(fill="lightblue") +
+  ggtitle('proportion of missing values') + xlab('') + ylab('')
+```
+
 An additional option is to use multivariate imputation by chained equations (MICE) (van Buren et al., 2023). MICE uses the fully conditional specification (FCS), which imputes each variable using a separate method. The method used can either be specified by the modeler or chosen by a set of defaults, depending on the kind of variable. For example, there are default methods for continuous variables and those for categorical variables, with additional methods for categorical variables that depend on the number of factors.
 
 ### Skewness
@@ -440,6 +478,23 @@ do.call("grid.arrange", c(plts, ncol=3))
 ```
 
 Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are somewhat suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers. Besides the suspect Alch.Rel data points, the remaining points appear to be valid (though extreme) values when compared to the main body of data points.
+
+We can observe that there is either bimodality or skew in most of the variables, suggesting a nonlinear model is appropriate. Because of the bimodality, violin plots are preferable than boxplots to observe any outliers,
+
+```{r violin-plots, warning=FALSE, message=FALSE, cache=TRUE}
+dfm |>
+  select(-c(Brand.Code)) |>
+  gather(key = "predictor", value = "value") |>
+  ggplot(aes(x = predictor, y = value)) +
+  geom_violin(fill="lightblue") +
+  facet_wrap(~ predictor, scales = "free") +
+  coord_flip() + 
+  theme_minimal() + 
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
 
 ## Modeling Approach
 
@@ -733,6 +788,7 @@ dfr[1,] <- data.frame(
     Train.Time=round(telapsed, 3)
 )
 
+
 # Stepwise linear model using MASS package/caret
 stepGrid <- data.frame(.nvmax=seq(1, round(ncol(trainx_red) / 2, 0)))  # Max number of parameters to use
 tstart <- Sys.time()
@@ -821,6 +877,7 @@ dfr[3,] <- data.frame(
     Train.Time=round(telapsed, 3)
 )
 
+
 ```
 
 ```{r}
@@ -844,6 +901,8 @@ dfr[21,] <- data.frame(
     MAPE.Test=mape(predrlm_full, testy_full),
     Train.Time=round(telapsed, 3)
 )
+
+
 
 ```
 
