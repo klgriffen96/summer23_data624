@@ -94,7 +94,7 @@ We note several things from a cursory first glance:
 Let's take a look at the distribution of the numerical predictors.
 
 ```{r numerical-distribution, warning=FALSE, cache=TRUE}
-dfm_raw |>
+dfm |>
   select(-c(PH,Brand.Code)) |>
   gather(key = "predictor", value = "value") |>
   ggplot(aes(x = value)) +
@@ -106,6 +106,8 @@ dfm_raw |>
         axis.title.x = element_blank(),
         axis.title.y = element_blank())
 ```
+
+We can observe that there is either bimodality or skew in most of the variables, suggesting a nonlinear model is appropriate. Because of the bimodality, violin plots are preferable than boxplots to observe any outliers,
 
 We'll need to do a small amount of data preparation first: The categorical variable Brand.Code will need to be factored into numerical levels, as some functions that we'll use later requires it (for example near-zero variance calculations, seen later). This will only be useful for initial data exploration; for modeling purposes, we'll need to handle this variable differently (see Data Preparation below).
 
@@ -479,7 +481,7 @@ do.call("grid.arrange", c(plts, ncol=3))
 
 Based on the plot above, there don't appear to be any outliers that are structurally unsound (i.e., those with impossible values, such as negative pH values). There are some values that are somewhat suspect (e.g. the six values on the far left and right sides of the Alch.Rel plot), but without a description of the data set or knowing how the data was collected, one can only hazard a guess as to which are valid and which are true outliers. Besides the suspect Alch.Rel data points, the remaining points appear to be valid (though extreme) values when compared to the main body of data points.
 
-We can observe that there is either bimodality or skew in most of the variables, suggesting a nonlinear model is appropriate. Because of the bimodality, violin plots are preferable than boxplots to observe any outliers,
+As mentioned prior, because of the bimodality, violin plots are preferable than boxplots to observe any outliers,
 
 ```{r violin-plots, warning=FALSE, message=FALSE, cache=TRUE}
 dfm |>
