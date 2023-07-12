@@ -27,90 +27,44 @@ library(AppliedPredictiveModeling)
 library(e1071)
 library(caret)
 
-
-# Set minimal theme
-theme_set(theme_minimal())
-
-```
-
-## Introduction
-
-This homework assignment includes problems from:
-
-Kuhn & Johnson. "Applied Predictive Modeling"
-
-This accompanies readings from KJ Chapters 6, 7, and 8.
-
-Additionally readings on recommender systems along with a recommender system problem was assigned by the professor.
-
-**This file contains the comparison between R and python**
-
-## KJ 6.3
-
-**A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
-
-### (a) Start R and use these commands to load the data:
-
-    > library(AppliedPredictiveModeling)
-    > data(chemicalManufacturing)
-    
-**The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
-
-```{r}
-
 # Load data
 data(ChemicalManufacturingProcess)
 
-```
 
-### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
-
-To get additional experience, we will try to do some work using python. The library `retriculate` helps with passing variables between r and python. The python anaconda distribution comes with a lot of preloaded libraries helpful for datascience.
-
-```{r}
 library(reticulate)
-# use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
-use_python("C:/Users/kayle/anaconda3/python.exe")
+use_python("C:\\GFApps\\Anaconda\\V3\\python.exe")
+# use_python("C:/Users/kayle/anaconda3/python.exe")
 
 ```
 
 ```{python}
-from sklearn.impute import SimpleImputer
 import pandas as pd
-from sklearn.feature_selection import VarianceThreshold
 import numpy as np
+from numpy import arange
+
 from scipy.stats import skew
-from sklearn.preprocessing import RobustScaler
+
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib.ticker import PercentFormatter
+
+from sklearn.impute import SimpleImputer
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.preprocessing import RobustScaler
 from sklearn.preprocessing import PowerTransformer
+from sklearn.model_selection import train_test_split
+from sklearn import model_selection
+from sklearn.model_selection import RepeatedKFold
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedKFold
+from sklearn.linear_model import ElasticNetCV
 
 
-
-```
-
-By typing "r." before a variable name, you can access variables from the r environment in the python environment. First lets take a look at the class and shape of the `dfchem`.
-
-```{python}
-type(r.ChemicalManufacturingProcess)
 r.ChemicalManufacturingProcess.shape
-```
 
-So we know that python has interpreted the dataframe in r as a pytjon pandas dataframe. The dimensions are what we expected 176 observations of 58 variables.
-
-Now lets create a list of missing variables to understand where the NAs are.
-
-```{python}
 r.ChemicalManufacturingProcess.isna().sum()
-```
-
-
-Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
-
-Now lets impute with python. We couldn't get the KNN imputer in python to work, so using the simple imputer with mean imputation instead.
-
-```{python}
 
 # define the imputer
 imputer = SimpleImputer(strategy='mean')
@@ -125,17 +79,8 @@ pdfimp.iloc[:,:] = imputer.transform(r.ChemicalManufacturingProcess)
 # check nas and shape
 pdfimp.isna().sum()
 pdfimp.shape
-```
 
-### (c)
 
-**Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
-
-First we will do exploratory data analysis and do any pre-processing necessary.
-
-Check near zero variance in python.
-
-```{python}
 
 var_thr = VarianceThreshold(threshold = 0.02) #Removing both constant and quasi-constant
 var_thr.fit(pdfimp)
@@ -145,18 +90,11 @@ concol = [column for column in pdfimp.columns
 
 for features in concol:
     print(features)
-```
 
-According to python, there are more near zero variance variables, we will drop them.
 
-```{python}
 
 pdf0var = pdfimp.drop(concol,axis=1)
-```
 
-Next we can inspect the outliers.
-
-```{python}
 
 for i in range(1,pdf0var.shape[1]):
   # IQR
@@ -174,15 +112,7 @@ for i in range(1,pdf0var.shape[1]):
   total = upper_array.shape[0] + lower_array.shape[0]
   
   print(pdf0var.columns[i], total)
-```
 
-You can see the function worked the same in python and in r.
-
-Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
-
-Next we can examine the skewness.
-
-```{python}
 
 all_skewed = []
 
@@ -195,15 +125,8 @@ for i in range(1,pdf0var.shape[1]):
   
 pdfx = pdf0var.iloc[:,1:]
 
-```
 
-There is a small missmatch between python and rs skew calculation but overall they are similar.
 
-Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
-
-Lets try normalization first. Based on the fact that our data does contain outliers, a scaling mechanism robust to this may be needed (https://scikit-learn.org/stable/modules/preprocessing.html)
-
-```{python}
 
 robust_scaler = RobustScaler()
 pdfscaled = robust_scaler.fit_transform(pdfx.to_numpy())
@@ -218,11 +141,6 @@ pdfscaled = pd.DataFrame(pdfscaled, columns=pdfx.columns)
 #   axs[1].hist(pdfscaled.iloc[:, i], bins=n_bins)
 #   plt.show()
   
-```
-
-Now that we know the scaling is correct, we can move onto the YeoJohnson transformation.
-
-```{python}
 
 power_transfromer = PowerTransformer(method='yeo-johnson', standardize=False)
 pdfyeo = power_transfromer.fit_transform(pdfscaled.to_numpy())
@@ -235,47 +153,101 @@ pdfyeo = pd.DataFrame(pdfyeo, columns=pdfscaled.columns)
 #   axs[1].hist(pdfyeo.iloc[:, i], bins=n_bins)
 #   plt.show()
 
-```
 
-Now we take a look at a correlation matrix.
+f = plt.figure(figsize=(15, 15))
+plt.matshow(pdfyeo.corr(), fignum=f.number)
+plt.xticks(range(pdfyeo.select_dtypes(['number']).shape[1]), pdfyeo.select_dtypes(['number']).columns, fontsize=8, rotation=90)
+plt.yticks(range(pdfyeo.select_dtypes(['number']).shape[1]), pdfyeo.select_dtypes(['number']).columns, fontsize=8)
+cb = plt.colorbar()
+cb.ax.tick_params(labelsize=14)
+plt.show()
 
-```{python}
 
-plt.matshow(pdfyeo.corr())
+x = pdfyeo
+y = r.ChemicalManufacturingProcess["Yield"]
+  
+# using the train test split function
+x_train, x_test, y_train, y_test = train_test_split(x,y
+,random_state=104,
+test_size=0.2, 
+shuffle=True)
+
+
+#define cross-validation method
+cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
+
+mse = []
+n = len(x)
+
+# Calculate MSE with only the intercept
+score = -1*model_selection.cross_val_score(PLSRegression(n_components=1),
+           np.ones((n,1)), y, cv=cv, scoring='neg_mean_squared_error').mean()    
+mse.append(score)
+
+# Calculate MSE using cross-validation, adding one component at a time
+for i in range(1, 10):
+    pls = PLSRegression(n_components=i)
+    score = -1*model_selection.cross_val_score(pls, x, y, cv=cv,
+               scoring='neg_mean_squared_error').mean()
+    mse.append(score)
+    
+#plot test MSE vs. number of components
+plt.clf()
+plt.plot(mse)
+plt.xlabel('Number of PLS Components')
+plt.ylabel('MSE')
+plt.show()
+
+
+#calculate RMSE
+pls = PLSRegression(n_components=5)
+pls.fit((x_train), y_train)
+
+np.sqrt(mse[6])
+
+
+
+alphas = [0.0001, 0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 1]
+
+elastic_cv=ElasticNetCV(alphas=alphas, cv=cv)
+enet = elastic_cv.fit(x_train, y_train)
+print(enet.alpha_)
+
+
+
+np.sqrt(mean_squared_error(y_test, pls.predict((x_test))))
+
+np.sqrt(mean_squared_error(y_test, enet.predict(x_test)))
+
+
+def _calculate_vips(model):
+  t = model.x_scores_
+  w = model.x_weights_
+  q = model.y_loadings_
+  p, h = w.shape
+  vips = np.zeros((p,))
+  s = np.diag(np.matmul(np.matmul(np.matmul(t.T,t),q.T), q)).reshape(h, -1)
+  total_s = np.sum(s)
+  for i in arange(p):
+    weight = np.array([ (w[i,j] / np.linalg.norm(w[:,j]))**2 for j in range(h) ])
+    vips[i] = np.sqrt(p*(np.matmul(s.T, weight))/total_s)
+  return vips
+
+vimps = _calculate_vips(pls)
+
+vimpsdf = pd.DataFrame({'Var' : pdfscaled.columns, 'VarImp' : vimps})
+
+vimpsdf.sort_values(by = "VarImp", ascending = False)
+
+
+f = plt.figure(figsize=(15, 15))
+plt.matshow(pdf0var.corr(), fignum=f.number)
+plt.xticks(range(pdf0var.select_dtypes(['number']).shape[1]), pdf0var.select_dtypes(['number']).columns, fontsize=8, rotation=90)
+plt.yticks(range(pdf0var.select_dtypes(['number']).shape[1]), pdf0var.select_dtypes(['number']).columns, fontsize=8)
+cb = plt.colorbar()
+cb.ax.tick_params(labelsize=14)
 plt.show()
 ```
-
-Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
-
-
-Now we will split the data into a training and a test set.
-
-### (d)
-
-**Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
-
-
-The RMSE value approximately the same in the test set as on the training set for both, but the RMSE was lower for the PLS than the elastic net on the test data.
-
-We can check out the residuals for the pls.
-
-
-The residuals appear to be random and centered around mean zero. The model appears to fit well.  
-
-### (e)
-
-**Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
-
-To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables for the pls tuned model, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
-
-
-
-### (f)
-
-**Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
-
-
-We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. 
 
 
 ### 7.2
@@ -324,6 +296,41 @@ postResample(pred = knnPred, obs = testData$y)
 ```
 
 Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+
+
+```{python}
+import numpy as np
+from sklearn.neighbors import KNeighborsRegressor
+knn_model = KNeighborsRegressor(n_neighbors=17)
+
+data_train = r.trainingData.items()
+data_train_list = list(data_train)
+data_train_np = np.array(data_train_list)
+
+knn_model.fit(data_train_np[0][1], data_train_np[1][1])
+
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+
+data_test = r.testData.items()
+data_test_list = list(data_test)
+data_test_np = np.array(data_test_list)
+
+knn_preds = knn_model.predict(data_test_np[0][1])
+mse = mean_squared_error(data_test_np[1][1], knn_preds)
+rmse = sqrt(mse)
+rmse
+
+from sklearn.neural_network import MLPRegressor
+
+nn_model = MLPRegressor(random_state=1, max_iter=500).fit(data_train_np[0][1], data_train_np[1][1])
+
+nn_preds = nn_model.predict(data_test_np[0][1])
+mse = mean_squared_error(data_test_np[1][1], nn_preds)
+rmse = sqrt(mse)
+rmse
+
+```
 
 ### 7.5
 
