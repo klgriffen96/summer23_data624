@@ -2135,6 +2135,15 @@ tmpdf2 %>%
     hline(part = "all") %>%
     set_caption('Comparison of pH statistics')
 
+# Generate histogram of training vs predicted PH
+tmpdf3 <- df_ph %>%
+    mutate(Set='Predicted') %>%
+    rbind(data.frame(PH=dfm_full$PH) %>% mutate(Set='Training'))
+tmpdf3 %>% 
+    ggplot(aes(x=PH)) +
+    geom_histogram(bins=30) +
+    facet_wrap('Set')
+
 ```
 
 As shown in the table above, the mean, median, and first and third quartiles are all roughly even between the training and evaluation data. The minimum, maximum, and standard deviation of the training data show a wider range than that of the evaluation data, but this is natural given the greater number of samples in the training set.
