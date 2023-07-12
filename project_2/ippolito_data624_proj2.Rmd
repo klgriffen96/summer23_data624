@@ -1,6 +1,6 @@
 ---
-title: "ippolito_data624_proj2"
-author: "Michael Ippolito"
+title: "Group2_data624_proj2"
+author: "Group 2: Alice Friedman, Kayleah Griffen, Josh Iden, Michael Ippolito"
 date: '2023-07-04'
 output:
   word_document:
@@ -212,7 +212,7 @@ It should be noted that, while collinearity and multicollinearity adversely affe
 
 ### Near-zero variance
 
-We'll look for variables having near-zero variance (NZV) since some models are sensitive to this condition. A variable exhibiting NZV is typically categorical **[is this true?]** and is further characterized has having only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
+We'll look for variables having near-zero variance (NZV) since some models are sensitive to this condition. A variable exhibiting NZV is characterized as having only a single value (or a very small number of values) across the entire range of observations. These types of "degenerate" distributions can be problematic for models such as those based on linear regression. If NZV variables are observed, either they should be removed or a model that is immune to NZV variables should be used (e.g. tree-based models).
 
 To calculate NZV, we'll use the NearZeroVar() function from the caret package. This calculates the ratio of the frequency of the most common value in each variable to that of the next most common value. If the ratio is high, this indicates NZV conditions, and the variable may need special handling if a model that is sensitive to NZV variables are being used (Kuhn, 2022).
 
@@ -271,7 +271,7 @@ As indicated in the table above, a large proportion of the observations have zer
 
 ### Missing values
 
-Now we'll examine missing values in the data set. As noted earlier, there aren't that many, but some models are sensitive to missing values. As such, the following options are avaiable:
+Now we'll examine missing values in the data set. As noted earlier, there aren't that many, but some models are sensitive to missing values. As such, the following options are available:
 
 1) Discard observations that have missing values for many of the predictors.
 1) Discard entire predictors that have many values missing across a great number of observations.
@@ -2213,15 +2213,6 @@ As shown in the table above, the mean, median, and first and third quartiles are
 
 ```{r}
 
-# Display summary
-tmpdf2 %>%
-    select(Statistic, Training, Evaluation) %>%
-    flextable() %>%
-    width(width = 2) %>%
-    fontsize(size = 10) %>%
-    line_spacing(space = 1) %>%
-    hline(part = "all") %>%
-    set_caption('Comparison of pH statistics')
 # Generate histogram of training vs predicted PH
 tmpdf3 <- df_ph %>%
     mutate(Set='Predicted') %>%
