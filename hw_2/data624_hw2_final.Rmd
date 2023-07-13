@@ -1,0 +1,1497 @@
+---
+title: 'Data 624: Predictive Analytics HW:2'
+author: 'Group 2: Alice Friedman, Kayleah Griffen, Michael Ippolito, Josh Iden'
+date: "2023-06-19"
+output:
+  word_document:
+    toc: yes
+  pdf_document:
+    dev: cairo_pdf
+    toc: yes
+  html_document:
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float: yes
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T)
+library(tidyverse)
+library(flextable)
+library(DMwR2)
+library(gridExtra)
+library(AppliedPredictiveModeling)
+library(e1071)
+library(caret)
+
+
+# Set minimal theme
+theme_set(theme_minimal())
+
+```
+
+## Introduction
+
+This homework assignment includes problems from:
+
+Kuhn & Johnson. "Applied Predictive Modeling"
+
+This accompanies readings from KJ Chapters 6, 7, and 8.
+
+Additionally readings on recommender systems along with a recommender system problem was assigned by the professor.
+
+
+## KJ 6.3
+
+**A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
+
+### (a)   
+
+Start R and use these commands to load the data:
+
+    > library(AppliedPredictiveModeling)
+    > data(chemicalManufacturing)
+    
+**The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
+
+```{r}
+
+# Load data
+data(ChemicalManufacturingProcess)
+
+```
+
+### (b)  
+
+A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+
+We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
+
+```{r warning=FALSE}
+
+# Show missing value counts
+dfchem <- ChemicalManufacturingProcess  # To avoid typing this many letters
+df_na <- data.frame(Predictor = colnames(dfchem), Missing=colSums(is.na(dfchem))) %>%
+    filter(Missing > 0) %>%
+    arrange(desc(Missing)) 
+
+flextable(df_na) |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
+
+```{r}
+dfimp <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+# Verify no more missing values exist
+print(paste0('Missing values after imputation: ', sum(is.na(dfimp))))
+
+```
+
+
+### (c)
+
+**Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
+
+First we will do exploratory data analysis and do any pre-processing necessary.
+
+We can check the distribution of the predictors and see what have near-zero variance and remove these from the predictor set. 
+
+```{r}
+dfimp.x <- dfimp |> dplyr::select(-Yield)
+nzv <- nearZeroVar(dfimp.x)
+paste0("Inds near zero variance to be removed: ", colnames(dfimp.x[nzv]))
+dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(dfimp.x[nzv]))
+dfimp.x <- dfimp.x[-nzv]
+
+```
+
+
+Next we can inspect the outliers.
+
+```{r, warning=FALSE}
+# check for outliers
+
+df_outliers <- data.frame(predictor = c(), outliers = c())
+
+for (i in 1:length(dfimp.x)){
+  data <- dfimp.x[[i]]
+  quartiles <- quantile(data, probs=c(.25, .75), na.rm = FALSE)
+  IQR <- IQR(data)
+  Lower <- quartiles[1] - 1.5*IQR
+  Upper <- quartiles[2] + 1.5*IQR
+  outliers <- which(data < Lower | data > Upper)
+  data[outliers] <- NA
+  # print(paste0(colnames(dfimp.x[i]), " outliers: ", length(outliers)))
+  df_temp <- data.frame(predictor = colnames(dfimp.x[i]),
+                        outliers = length(outliers))
+  df_outliers <- rbind(df_outliers, df_temp)
+}
+
+df_outliers |>
+    arrange(desc(outliers))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+
+Some of the predictors contain a significant amount - approximately 30% - of outliers. So our modeling technique must be robost to outliers.
+
+Next we can examine the skewness.
+
+```{r}
+skew.vals <- apply(dfimp.x, MARGIN = 2, skewness) |>
+                  data.frame() |>
+                  rename("skew" = 1) |>
+                  filter(skew > 2 | skew < -2) 
+
+sprintf("Number of skewed variables: %d",nrow(skew.vals))
+
+df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
+
+df_skews |>
+    arrange(desc(Skew))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
+
+```{r}
+trans <- preProcess(dfimp.x, method = c("YeoJohnson", "center","scale"))
+df.x <- predict(trans, dfimp.x)
+
+# TODO: Grid ## printing plist in loop works fine, but fails with grid.arrange because they are all the same
+# plist <- list()
+# 
+# for (i in 1:length(df.x)){
+#   plist[[i]] <- df.x |> ggplot(aes(x = df.x[[i]])) + geom_histogram(bins = 30) + xlab(colnames(df.x)[i])
+# }
+# 
+# library(gridExtra)
+# n <- length(plist)
+# nCol <- floor(sqrt(n))
+# do.call("grid.arrange", c(plist, ncol=nCol))
+```
+
+We can take another look now at skewness.
+
+```{r}
+skew.vals <- apply(df.x, MARGIN = 2, skewness) |>
+                  data.frame() |>
+                  rename("skew" = 1) |>
+                  filter(skew > 2 | skew < -2) |>
+                  arrange(desc(skew))
+
+sprintf("Number of skewed variables: %d",nrow(skew.vals))
+
+dfchem %>% gather(key, value) %>% ggplot(aes(x=value)) + geom_histogram() + facet_wrap(~key, scales = "free")
+
+```
+
+According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefore models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled.
+
+```{r}
+df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
+
+df_skews |>
+    arrange(desc(Skew))  |>
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+Interestingly, the "YeoJohnson" transformation did not correct all of the skewnesses.
+
+Now we take a look at a correlation matrix.
+
+```{r width = 10}
+dfimp.x |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.3,
+            type = "lower")
+```
+
+
+Based on this graphic, we can see that there is a lot of correlation in the predictors. According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefor models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled. Another option that is capable of handling collinearity is the elastic net function which is a combination of the ridge and lasso penalty meaning it is able to regularize and feature select (pg. 127). We will attempt both the PLS and the elastic net and compare them to see what has better results.
+
+
+Now we will split the data into a training and a test set.
+
+```{r}
+set.seed("09041996")
+
+df <- df.x
+df$Yield <- dfchem$Yield
+
+# split training and testing sets
+train_indices <- createDataPartition(df$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+dftrain <- df[train_indices,]
+dftest <- df[-train_indices,]
+```
+
+Next we will examine the distribution of the yield for both the training and the test sets.
+
+```{r}
+# Examine train and test sets
+plot1 <- ggplot(data = dftrain, aes(x=Yield)) + geom_histogram(fill = "steelblue", binwidth = 1) + 
+  ggtitle('Training set yield histogram') 
+
+plot2 <- ggplot(data = dftest, aes(x=Yield)) + geom_histogram(fill = "steelblue", binwidth = 1) + 
+  ggtitle('Test set yield histogram') 
+
+grid.arrange(plot1, plot2, ncol = 2)
+
+```
+
+
+```{r}
+ctrl <- trainControl(method = "cv", number = 10)
+
+data.train.x <- dftrain |> dplyr::select(-Yield)
+data.train.y <- dftrain |> dplyr::select(Yield)
+
+# tune and fit the model with pre processing 
+plsTune <- train(data.train.x, data.train.y$Yield,
+                 method = "pls",
+                 tuneLength = 20,
+                 trControl = ctrl)
+
+# plsTune
+
+# elastic net regression
+# enetGrid <- expand.grid(.lambda=c(0, 0.01, 0.1), .fraction=seq(0.05, 1, length=20))
+enetTune <- train(data.train.x, data.train.y$Yield, 
+                  method='enet',  
+                  trControl=ctrl)
+# enetTune
+```
+
+```{r}
+optimal.model <- plsTune$bestTune[['ncomp']]
+optimal.rmse <- plsTune$results[['RMSE']][[3]]
+
+cat(sprintf("The optimal number of components to minimize the RMSE is %i\nThe RMSE using %i components is %f.",
+            optimal.model,
+            optimal.model,
+            optimal.rmse))
+```
+
+```{r}
+optimal.fraction  <- enetTune$bestTune[['fraction']]
+optimal.lambda <- enetTune$bestTune[['lambda']]
+optimal.rmse <- enetTune$results[['RMSE']][[1]]
+
+cat(sprintf("The optimal fraction to minimize the RMSE is %f\nThe lambda to minimize RMSE is %i\n The optimal RMSE is %f.",
+            optimal.fraction,
+            optimal.lambda,
+            optimal.rmse))
+```
+
+The pls net had the lower RMSE for the training data.
+
+```{r}
+plot(plsTune)
+
+plot(enetTune)
+
+```
+
+### (d)
+
+**Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
+
+```{r}
+data.test.x <- dftest |> dplyr::select(-Yield)
+data.test.y <- dftest |> dplyr::select(Yield)
+
+preds <- predict(plsTune, data.test.x)
+postResample(preds, data.test.y$Yield)
+
+preds <- predict(enetTune, data.test.x)
+postResample(preds, data.test.y$Yield)
+```
+
+The RMSE value approximately the same in the test set as on the training set for both, but the RMSE was lower for the PLS than the elastic net on the test data.
+
+We can check out the residuals for the pls.
+
+```{r}
+plot(residuals(plsTune), ylab='residuals')
+abline(h = 0, col = 'red')
+```
+
+The residuals appear to be random and centered around mean zero. The model appears to fit well.  
+
+### (e)
+
+**Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
+
+To understand what predictors are most important to the model the "variable importance in the projection" designed by Wold et. Al can be used (pg. 118). This metric was created because without it, it can be difficult to understand the importance of any one predictor because they are linear combinations of predictors. Using the function `caret::varImp` we can interpret the results with a scaled list of the importance of each variables for the pls tuned model, where 100 is the  most important and 0 is the least. Of the top factors, about half are biological and half are manufacturing, while overall, manufacturing processes dominate.
+
+```{r, warning = FALSE}
+
+var.imp <- varImp(plsTune)
+plot(var.imp, top = 20)
+
+```
+
+### (f)
+
+**Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
+
+
+```{r}
+# store 10 most important variable names
+m.imp <- var.imp$importance |>
+  data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  row.names()
+
+# correlation matrix of 10 most important variables and response variable
+dfimp |>
+  dplyr::select(all_of(c("Yield",m.imp))) |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.6,
+            type = "lower")
+```
+
+## KJ 7.2   
+
+This correlation matrix helps make clear processes that can be increased or decreased to improve yield. We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. Because PLS was the best-performing model, it isn't possible to quantify the increase in yield that could be realized if certain processes were increased or decreased. This is due to the fact that PLS mathematically transforms the actual features into new, latent predictors to remove collinearity among variables while selecting the features that have the greatest contribution to variance. While it isn't possible to directly quantify cost savings, we can say that the greatest savings will be realized by adjusting those with the most relative importance (i.e. manufacturing process #32, 13, 09, 36, etc.).
+
+Friedman (1991) introduced several benchmark data sets created by simulation. One of these simulations used the following nonlinear equation to create data:
+
+y = 10 sin(πx1x2) + 20(x3 − 0.5)2 + 10x4 + 5x5 + N(0, σ2)
+
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package mlbench contains a function called mlbench.friedman1 that simulates these data:
+
+```{r}
+library(mlbench)
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x <- data.frame(trainingData$x)
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+
+```
+
+Tune several models on these data. For example:
+
+```{r}
+
+# Results data frame
+df_results <- data.frame(matrix(nrow=4, ncol=3))
+colnames(df_results) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
+library(caret)
+knnModel <- train(x = trainingData$x, 
+                    y = trainingData$y, 
+                    method = "knn",
+                    preProc = c("center", "scale"),
+                    tuneLength = 10)
+# knnModel
+
+knnPred <- predict(knnModel, newdata = testData$x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+knn.results <- postResample(pred = knnPred, obs = testData$y)
+
+df_results[1,] = data.frame(
+    Model='knnModel', 
+    Tuning.Parameters=paste0('k=', knnModel$bestTune[['k']]), 
+    RMSE=min(knn.results[['RMSE']])
+)
+
+plot(knnModel)
+
+```
+
+### NEURAL NETWORK MODEL
+
+First we remove predcictors to ensure that the maximum absolute pairwise correlation between the predictors is less than 0.75,
+
+```{r}
+findCorrelation(cor(trainingData$x), cutoff = .75)
+```
+
+No predictors exceed a pairwise correlation of .75 or greater. Next, we create a specific candidate set of models to evaluate:
+
+```{r, warning = FALSE, message = FALSE, cache = TRUE}
+
+library(doParallel)
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
+# specify and store the resampling method
+ctrl <- trainControl(method = "cv", 
+                     allowParallel = TRUE,
+                     number = 10)
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1),
+                        .size = c(1:10),
+                        .bag = FALSE)
+
+set.seed(100) 
+nnetModel <- train(trainingData$x, trainingData$y,
+                  method = "avNNet",
+                  tuneGrid = nnetGrid,
+                  trControl = ctrl,
+                  preProc = c("center","scale"),
+                  linout = TRUE,
+                  trace = FALSE,
+                  MaxNwts = 10 * (ncol(trainingData$x) +  1) + 10 + 1,
+                  maxit = 500,
+                  allowParallel = TRUE)
+
+
+stopCluster(cl)
+registerDoSEQ()
+
+# nnetModel
+
+```
+
+```{r}
+nnetPred <- predict(nnetModel, newdata = testData$x)
+nnet.results <- postResample(pred = nnetPred, obs = testData$y)
+
+df_results[2,] = data.frame(
+    Model='Neural Net', 
+    Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
+    RMSE=min(nnet.results[['RMSE']])
+)
+plot(nnetModel)
+```
+
+### MARS MODEL (Multivariate Adaptive Regression Splines)
+
+```{r, message=FALSE, warning=FALSE, cache = TRUE}
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+set.seed(100)
+
+marsModel <- train(trainingData$x, trainingData$y,
+                   method = "earth",
+                   # Explicitly declare the candidate models to test,
+                   tuneGrid = marsGrid,
+                   trControl = ctrl)
+
+# marsModel
+```
+
+```{r, cache = TRUE}
+marsPred <- predict(marsModel, newdata = testData$x)
+mars.results <- postResample(pred = marsPred, obs = testData$y)
+
+df_results[3,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('nprune=', marsModel$bestTune[['nprune']], ', degree=', marsModel$bestTune[['degree']]),
+    RMSE=min(mars.results[['RMSE']])
+)
+plot(marsModel)
+
+```
+
+### SVM (Support Vector Machines)
+
+```{r, cache = TRUE}
+svmModel <- train(trainingData$x, trainingData$y,
+                  method = "svmRadial",
+                  preProcess = c("center","scale"),
+                  tuneLength = 14,
+                  trControl = ctrl)
+
+# svmModel
+```
+
+```{r, cache = TRUE}
+svmPred <- predict(svmModel, newdata = testData$x)
+svm.results <- postResample(pred = svmPred, obs = testData$y)
+
+df_results[4,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('sigma=', svmModel$bestTune[['sigma']], ', C=', svmModel$bestTune[['C']]),
+    RMSE=min(svm.results[['RMSE']])
+)
+plot(svmModel)
+```
+
+Now we can compare the final results,
+
+```{r}
+df_results |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+```
+
+The MARS model performs best according to the RMSE. The RMSE was significantly less than that of its closest competitor, SVM. The model-averaged neural network model performed similarly to SVM. The K-nearest neighbor model performed poorly, with an RMSE well above the others. This is not surprising, as KNN models typically perform poorly when there are predictors that don't contribute significantly to the response; as stated in the problem description, in this data set there are five such predictors. The other models account for "noisy" predictors by pruning or applying a weight or decay factor.
+
+
+```{r}
+vimp <- varImp(marsModel) 
+df_vimp <- data.frame(Variable = rownames(vimp$importance), Importance = vimp$importance)
+df_vimp |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+The MARS model does indeed select X1-X5 as the most informative variables! It does set X3 to 0, interestingly. 
+
+## KJ 7.5
+
+Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+### (a)   
+
+Which nonlinear regression model gives the optimal resampling and test  set performance?
+
+```{r}
+set.seed("09041996")
+data("ChemicalManufacturingProcess")
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+cmp_i2 <- cmp_i |> select(-Yield)
+
+trans <- preProcess(cmp_i2, method = c("center", "scale", "YeoJohnson", "nzv"))
+cmp_i2 <- predict(trans, cmp_i2)
+
+cmp_i2$Yield <- cmp_i$Yield
+
+cmp_i <- cmp_i2
+
+i <- createDataPartition(cmp_i$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
+```
+
+
+```{r}
+library(caret)
+
+# Results data frame
+df_results <- data.frame(matrix(nrow=4, ncol=3))
+colnames(df_results) <- c('Model', 'Tuning.Parameters', 'RMSE')
+
+knnModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "knn",
+                    tuneLength = 10)
+# knnModel
+
+knnPred <- predict(knnModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+knn.results <- postResample(pred = knnPred, obs = data.test.y)
+
+df_results[1,] = data.frame(
+    Model='knnModel', 
+    Tuning.Parameters=paste0('k=', knnModel$bestTune[['k']]), 
+    RMSE=min(knn.results[['RMSE']])
+)
+
+plot(knnModel)
+
+```
+
+
+Next try neural network.
+
+```{r}
+
+# remove predictors so absolute pairwise correlation is less than 0.75
+
+tooHigh <- findCorrelation(cor(data.train.x), cutoff = .75)
+
+
+trainXnnet <- data.train.x[, -tooHigh]
+testXnnet <- data.test.x[, -tooHigh]
+
+# Find out how many cores are available: 
+detectCores()
+## [1] 16
+# Create cluster with desired number of cores: 
+cl <- makeCluster(16)
+# Register cluster: 
+registerDoParallel(cl)
+# Find out how many cores are being used
+getDoParWorkers()
+
+nnetGrid <- expand.grid(.decay = c(0, 0.01, .1), .size = c(1:10), .bag = FALSE)
+
+nnetModel <- train(x = trainXnnet, 
+                    y = data.train.y,
+                   method = "avNNet",
+                   tuneGrid = nnetGrid,
+                   trControl = trainControl(method = "cv"),
+                   preProc = c("center", "scale"),
+                   linout = TRUE,
+                   trace = FALSE,
+                   MaxNWts = 10 * (ncol(trainXnnet) + 1) + 10 + 1,
+                   maxit = 500,
+                   allowParallel = TRUE)
+
+stopCluster(cl)
+registerDoSEQ()
+
+# nnetModel
+
+nnetPredict <- predict(nnetModel, newdata = testXnnet)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+nnet.results <- postResample(pred = nnetPredict, obs = data.test.y)
+
+df_results[2,] = data.frame(
+    Model='Neural Net', 
+    Tuning.Parameters=paste0('decay=', nnetModel$bestTune[['decay']], ', size=', nnetModel$bestTune[['size']], ', bag=False'), 
+    RMSE=min(nnet.results[['RMSE']])
+)
+plot(nnetModel)
+
+```
+
+Next try MARS. 
+
+```{r}
+
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+
+
+MARSModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "earth",
+                    tuneGrid = marsGrid,
+                    trControl = trainControl(method = "cv"))
+
+
+# MARSModel
+
+MARSPred <- predict(MARSModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+mars.results <- postResample(pred = MARSPred, obs = data.test.y)
+
+df_results[3,] = data.frame(
+    Model='MARS', 
+    Tuning.Parameters=paste0('nprune=', MARSModel$bestTune[['nprune']], ', degree=', MARSModel$bestTune[['degree']]),
+    RMSE=min(mars.results[['RMSE']])
+)
+plot(MARSModel)
+
+```
+
+Next try SVM.
+
+```{r}
+svmModel <- train(x = data.train.x, 
+                    y = data.train.y, 
+                    method = "svmRadial",
+                  tuneLength = 14,
+                  trControl = trainControl(method = "cv"))
+# svmModel
+
+svmPred <- predict(svmModel, newdata = data.test.x)
+## The function 'postResample' can be used to get the test set
+## perforamnce values
+svm.results <- postResample(pred = svmPred, obs = data.test.y)
+
+df_results[4,] = data.frame(
+    Model='SVM', 
+    Tuning.Parameters=paste0('sigma=', svmModel$bestTune[['sigma']], ', C=', svmModel$bestTune[['C']]),
+    RMSE=min(svm.results[['RMSE']])
+)
+plot(svmModel)
+```
+
+
+```{r}
+
+df_results |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+```
+
+The optimal resampling and test performance was from the SVM model.
+
+
+### (b)   
+
+Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+```{r}
+# variable importance
+var.imp <- varImp(svmModel)
+plot(var.imp, top = 10)
+```
+
+Among the ten most important variables, six are process and four are biological. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+
+### (c)   
+
+Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+```{r}
+# store 10 most important variable names
+m.imp <- var.imp$importance |>
+  data.frame() |>
+  arrange(desc(Overall)) |>
+  head(10) |>
+  row.names()
+
+# correlation matrix of 10 most important variables and response variable
+cmp_i |>
+  select(all_of(c("Yield",m.imp))) |>
+  cor() |>
+  round(2) |>
+  corrplot::corrplot(method = "square",
+            order = "alphabet",
+            tl.cex = 0.6,
+            type = "lower")
+```
+
+```{r}
+featurePlot(df[,m.imp], cmp_i$Yield,
+            between = list(x = 1, y = 1),
+            type = c("p","smooth"))
+```
+
+These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot, corresponding to the correlations in the matrix plot.
+
+## KJ 8.1
+
+Recreate the simulated data from Exercise 7.2
+
+```{r}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+
+### (a)   
+
+Fit a random forest model to all of the predictors, then estimate the variable importance scores:
+
+```{r}
+library(randomForest)
+library(caret)
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+
+```
+
+Did the random forest model significantly use the uninformative predictors (V6 – V10)?
+
+```{r}
+
+# Display importance values
+
+df_rfImp1 <- data.frame(Variable = rownames(rfImp1), Importance = rfImp1$Overall)
+
+df_rfImp1 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+As shown, the uninformative predictors (V6-V10) have a significantly lower relative importance in the model, which is consistent with our earlier findings.
+
+### (b)   
+
+Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+
+```{r}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+
+Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?
+
+```{r}
+model2 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+
+
+df_rfImp2 <- data.frame(Variable = rownames(rfImp2), Importance = rfImp2$Overall)
+
+df_rfImp2 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+The variable importance of V1 went down, and the importance of the duplicate1 variable was approximately the same - so effectively the variable importance is split between the two correlated variables. 
+
+What happens when you add another predictor that is also highly correlated with V1?
+
+```{r}
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .2
+cor(simulated$duplicate2, simulated$V1)
+```
+
+```{r}
+model3 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE) |> arrange(desc(Overall))
+
+df_rfImp3 <- data.frame(Variable = rownames(rfImp3), Importance = rfImp3$Overall)
+
+df_rfImp3 %>%
+    arrange(desc(Importance)) %>%
+    flextable()  |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+As shown in the table, the relative importances of V1 and duplicate1 decreased with the introduction of variable duplicate2. The sum of these three importances are roughly on par with the importance of V1 in the first model and the sum of v1 + duplicate1 in the second model. This is consistent with the way regression trees are sensitive to highly correlated variables.
+
+### (c)    
+
+Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+```{r, warning=FALSE}
+library(party)
+
+
+model_forest <- cforest(y ~ ., data = simulated)
+
+m_t <- varimp(model_forest, conditional = TRUE) 
+m_f <- varimp(model_forest, conditional = FALSE) 
+
+l_t <- cbind(m_t, m_f)
+
+df_t <- data.frame(Variable = rownames(l_t), 
+                   Conditional_True = l_t[,1],
+                   Conditional_False = l_t[,2])
+
+df_t |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+```
+
+Using conditional inference, with the toggle being True, has the effect of lowering the importance of the two variables that are highly correlated with V1; however V1 is also reduced. Variable V1 itself remained third in the order of relative importance among other variables in both cases. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced for the toggle being True. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
+
+
+### (d)    
+
+Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+Boosted tree.
+
+```{r}
+# Init results table
+dfr <- data.frame(matrix(nrow=0, ncol=3))
+colnames(dfr) <- c('Model', 'Variable', 'Rank')
+
+# Boosted tree
+library(gbm)
+set.seed(77)
+fitgbm1 <- gbm(y ~ ., data=simulated, distribution='gaussian', n.trees=1000)
+tmpdf <- varImp(fitgbm1, numTrees=1000)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Boosted tree', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+library(Cubist)
+set.seed(77)
+fitcub1 <- cubist(x=simulated %>% dplyr::select(-y), y=simulated$y)
+tmpdf <- varImp(fitcub1, numTrees=1000)
+
+# Results table
+dfr <- rbind(dfr, data.frame(
+             Model='Cubist', 
+             Variable=rownames(tmpdf),
+             Rank=rank(-tmpdf$Overall)))
+
+```
+
+Compare variable importance of the models.
+
+```{r warning=F}
+
+# Plot variable importance
+dfr %>%
+    filter(Variable %in% c('V1', 'duplicate1', 'duplicate2')) %>%
+    ggplot(aes(x=factor(Variable, level=c('V1', 'duplicate1', 'duplicate2')), y=11-Rank, group=Model, color=Model, shape=Model)) +
+    geom_point() +
+    geom_line() +
+    scale_y_discrete(name='Rank', limits=rev(factor(seq(1, 10)))) +
+    xlab('Variable') +
+    ggtitle('Comparison of variable importance of highly correlated variables')
+
+```
+
+As shown in the graph, the trees tend to split the variable importance among the three correlated predictors, although most downplayed the importance of the first duplicated variable. 
+
+## KJ 8.2
+
+Use a simulation to show tree bias with different granularities.
+
+```{r}
+library(rpart)
+# Set seed
+set.seed(77)
+
+# Generate three discrete variables
+s1 <- sample(x=seq(0, 9), size=1000, replace=T)
+s2 <- sample(x=seq(0, 99), size=1000, replace=T)
+s3 <- sample(x=seq(0, 999), size=1000, replace=T)
+
+# Generate three continuous variables
+s4 <- runif(n=1000, min=0, max=9)
+s5 <- runif(n=1000, min=0, max=99)
+s6 <- runif(n=1000, min=0, max=999)
+
+# Generate outcome variable
+y <- s1 + s2 + s3 + s4 + s5 + s6 + runif(n=1000, min=0, max=1)
+
+# Create data frame
+df82 <- data.frame(outcome=y, discrete1=s1, discrete2=s2, discrete3=s3, continuous1=s4, continuous2=s5, continuous3=s6)
+
+# Simple CART
+fitcart <- rpart(outcome ~ ., data=df82)
+
+df_fit <- varImp(fitcart)
+df_fit <- data.frame(Variable = rownames(df_fit), Importance = df_fit$Overall)
+df_fit %>%
+    arrange(desc(Importance)) %>%
+    flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 0.5) |>
+    hline(part = "all")
+
+```
+
+As expected, the variables with many discrete values had variable importances that far outweighed the others.
+
+
+## KJ 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+### (a)   
+
+Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+*The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration; subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, 0.9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
+
+*Boosting can be susceptible to over-fitting, as boosting will select an optimal weak learner at each iteration. To offset this, regularization or shrinkage is applied as a learning rate which represents the fraction of a current prediction to be added to the previous iteration's predictions. As the learning rate increases, a larger fraction of predictions is added to the model - but this is not a good thing. A learning rate of 1 indicates no shrinkage, high error, focusing on fewer variables, the model is fast and greedy. If the learning rate is set to a low value, there is less of a penalty against larger coefficients; therefore, less influential predictors will remain small relative to more influential predictors. On the other hand, if the learning rate is high, the penalty against larger coefficients will be greater, resulting in reduced influence for these predictors. The idea behind increasing the learning rate is to try reducing overfitting. This results in fewer variables with greater importance--i.e., a more parsimonious model. The model on the left, with a lower learning rate, could be overfit, as there are more variables with greater importance (KJ pp. 206-207).*
+
+*With a smaller learning rate and a smaller bagging fraction, the variable importance may be more evenly distributed because there will be more trees created which gives more opportunity for a variable to be deemed "important".*
+
+### (b)   
+
+Which model do you think would be more predictive of other samples?
+
+*A lower learning rate indicates slower learning and fewer errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so we believe the model on the left would be more predictive.* 
+
+### (c)    
+
+How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+*According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors" (KJ p.205). Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. We would think that a smaller tree depth would lead to a variable importance that more rapidly decreases to 0, while a greater tree depth would have a more gradual decrease to 0.*
+
+## KJ 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+We'll load, preprocess, and split the data as before.
+
+```{r}
+set.seed("09041996")
+data("ChemicalManufacturingProcess")
+cmp_i <- knnImputation(ChemicalManufacturingProcess,k=3)
+
+cmp_i2 <- cmp_i |> select(-Yield)
+
+trans <- preProcess(cmp_i2, method = c("center", "scale", "YeoJohnson", "nzv"))
+cmp_i2 <- predict(trans, cmp_i2)
+
+cmp_i2$Yield <- cmp_i$Yield
+
+cmp_i <- cmp_i2
+
+i <- createDataPartition(cmp_i$Yield,
+                                    p = 0.8,
+                                    list = FALSE,
+                                    times = 1)
+
+x <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) != 'Yield']]
+y <- cmp_i[,colnames(cmp_i)[colnames(cmp_i) == 'Yield']]
+
+data.train.x <- x[i,]
+data.train.y <- y[i]
+data.test.x <- x[-i,]
+data.test.y <- y[-i]
+
+# specify 10x cross-validation
+ctrl <- trainControl(method='cv', number=10)
+
+# Results data frame
+dfr <- data.frame(matrix(nrow=6, ncol=3))
+colnames(dfr) <- c('Model', 'Tuning.Parameters', 'Test.RMSE')
+
+```
+
+Basic CART model tuned using complexity parameter.
+
+```{r}
+# Basic CART model - tuned using complexity parameter
+cartModel <- train(data.train.x, data.train.y, method='rpart', tuneLength=10, trControl=ctrl)
+# cartModel
+
+cartPredict <- predict(cartModel, newdata = data.test.x)
+
+cart.results <- postResample(pred = cartPredict, obs = data.test.y)
+
+dfr[1,] = data.frame(
+    Model='Basic CART (tuned w/complexity parameter)', 
+    Tuning.Parameters=paste0('cp=', cartModel$bestTune[['cp']]), 
+    Test.RMSE=(cart.results[['RMSE']])
+)
+
+
+```
+
+Basic CART model tuned using node depth.
+
+```{r}
+
+# Basic CART model - tuned using complexity parameter
+
+cart2Model <- train(data.train.x, data.train.y, method='rpart2', tuneLength=10, trControl=ctrl)
+# cart2Model
+
+cart2Predict <- predict(cart2Model, newdata = data.test.x)
+
+cart2.results <- postResample(pred = cart2Predict, obs = data.test.y)
+
+dfr[2,] = data.frame(
+    Model='Basic CART (tuned w/node depth)', 
+    Tuning.Parameters=paste0('maxdepth=', cart2Model$bestTune[['maxdepth']]), 
+    Test.RMSE=(cart2.results[['RMSE']])
+)
+
+```
+
+Bagged CART.
+
+```{r}
+
+# Bagged CART
+bagModel <- train(data.train.x, data.train.y, method='treebag', trControl=ctrl)
+# bagModel
+
+bagPredict <- predict(bagModel, newdata = data.test.x)
+
+bag.results <- postResample(pred = bagPredict, obs = data.test.y)
+
+dfr[3,] = data.frame(
+    Model='Bagged CART', 
+    Tuning.Parameters='', 
+    Test.RMSE=(bag.results[['RMSE']])
+)
+
+```
+
+Random forest.
+
+```{r}
+
+# Random forest
+rfModel <- train(data.train.x, data.train.y, method='rf', tuneLength=10, trControl=ctrl)
+# rfModel
+
+rfPredict <- predict(rfModel, newdata = data.test.x)
+
+rf.results <- postResample(pred = rfPredict, obs = data.test.y)
+
+dfr[4,] = data.frame(
+    Model='Random forest', 
+    Tuning.Parameter=paste0('mtry=', rfModel$bestTune[['mtry']]), 
+    Test.RMSE=(rf.results[['RMSE']]))
+
+```
+
+Stochastic gradient boosting.
+
+```{r message=FALSE}
+
+# Had to set message=FALSE to prevent thousands of trace messages
+
+# Stochastic gradient boosting
+gbmGrid <- expand.grid(.interaction.depth=seq(1, 7, by=2),
+                       .n.trees=seq(100, 1000, by=50),
+                       .shrinkage=c(0.01, 0.1),
+                       .n.minobsinnode=10)
+gbmModel <- train(data.train.x, data.train.y, method='gbm', tuneGrid=gbmGrid, trControl=ctrl, verbose = FALSE)
+
+# gbmModel
+
+gbmPredict <- predict(gbmModel, newdata = data.test.x)
+
+gbm.results <- postResample(pred = gbmPredict, obs = data.test.y)
+
+dfr[5,] = data.frame(
+    Model='Stochastic gradient boosting', 
+    Tuning.Parameters=paste0('interaction.depth=', gbmModel$bestTune[['interaction.depth']], 
+                             ', n.trees=', gbmModel$bestTune[['n.trees']], 
+                             ', shrinkage=', gbmModel$bestTune[['shrinkage']],
+                             ', n.minobsinnode=10'),  
+    Test.RMSE=(gbm.results[['RMSE']]))
+
+```
+
+Cubist.
+
+```{r}
+
+# Cubist
+cubGrid <- expand.grid(.committees=c(seq(1, 10), seq(20, 100, by=10)), .neighbors=c(0, 1, 5, 9))
+
+cubModel <- train(data.train.x, data.train.y, method='cubist', tuneGrid=cubGrid, trControl=ctrl)
+# cubModel
+
+cubPredict <- predict(cubModel, newdata = data.test.x)
+
+cub.results <- postResample(pred = cubPredict, obs = data.test.y)
+
+dfr[6,] = data.frame(
+    Model='Cubist', 
+    Tuning.Parameters=paste0('committees=', cubModel$bestTune[['committees']], 
+                             ', neighbors=', cubModel$bestTune[['neighbors']]),
+    Test.RMSE=(cub.results[['RMSE']]))
+
+```
+
+### (a)    
+
+Which tree-based regression model gives the optimal resampling and test
+set performance?
+
+```{r}
+dfr |> flextable() |>
+    width(width = 2) |>
+    fontsize(size = 10) |>
+    line_spacing(space = 1) |>
+    hline(part = "all")
+
+```
+
+
+The cubist model had the best performance. 
+
+### (b)   
+
+Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+```{r}
+plot(varImp(cubModel), top = 10, main = "Cubist Model")
+```
+
+In this model we see process variables comprise seven of the top ten most important variables, which is similar to what we observed in the linear and nonlinear models. Among the ten most important variables, six are process and four are biological for the nonlinear model. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
+
+
+### (c)   
+
+Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+```{r, fig.height=10, fig.width=15, warning=FALSE}
+
+library(partykit)
+library(rpart)
+data.train <- cmp_i[i,]
+rpartTree <- rpart(Yield ~ ., data = data.train)
+rpartTree2 <- as.party(rpartTree)
+plot(rpartTree2)
+```
+
+We can observe the following:   
+
+- The root node for this tree is `ManufacturingProcess32`. We see the split occurs when the variable is < 0.225.
+- Each child node represents a subset of the data at the denoted split criteria.
+- The tree depth is the number of splits in the tree. A deeper tree with more splits indicates more complex decision rules and potentially more overfitting to the data. In this chart, we have three splits.
+- The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.225, and we can observe where the exceptions to this occur.
+- You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
+
+## Recommender Problem
+
+Imagine 1000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer's basket -- and therefore 'Market Basket Analysis'.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a **transaction** and each column in a row represents an **item**.
+
+Here is the dataset = [GroceryDataSet.csv]('https://github.com/klgriffen96/summer23_data624/blob/main/hw_2/GroceryDataSet.csv') (comma separated file).
+
+Your assignment is to use R to mine the data for association rules. You should report support, confidence and lift and your top 10 rules by lift.
+
+### Exploratory Data Analysis
+
+First, we will pull in the data (stored on github) into a dataframe. The data contains a row for every transaction. For our EDA we will want a row for every item, along with a transaction ID. 
+
+```{r}
+url <- "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv"
+data <- read.csv(url, header=FALSE)
+data[data == ""] <- NA # replace empty cells with NA
+data$tid <- as.integer(row.names(data)) # create transaction ID column using row indices
+
+# pivot data
+baskets <- data |> 
+  pivot_longer(cols = starts_with("V"), 
+               values_to = "item", 
+               values_drop_na = TRUE) |>
+  dplyr::select(tid, item)
+```
+
+We can visualize the frequency of items in our baskets,
+
+```{r}
+baskets |>
+  group_by(item) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |> 
+  head(10) |>
+  ggplot(aes(x=reorder(item,count), y=count)) +
+  geom_col(fill="blue") +
+  geom_label(aes(label=count)) +
+  labs(x=NULL, y=NULL) + ggtitle('Top 10 Items') +
+  scale_y_discrete(breaks=NULL) +
+  coord_flip() + 
+  theme_classic()
+```
+
+Next we can look at the distribution of how many items were purchased in each transaction.
+
+```{r}
+baskets |>
+  group_by(tid) |>
+  summarize(total_items = n()) |>
+  ggplot(aes(x=total_items)) +
+  geom_histogram(fill="blue", bins=30) +
+  theme_classic() +
+  labs(title = "Distribution of Number of Items Purchased per Transaction")
+```
+
+### Market Basket Analysis
+
+Now we can shift to using the functionality of the `arules` package. We will read in the file to a transactions object. The data is in "basket" format, meaning every row is a set of items that represent one transaction. After loading we can take a look at the top ten items with the `itemFrequencyPlot` function.
+
+```{r,cache=TRUE}
+library(arules)
+library(arulesViz)
+library(flextable)
+basket_tr <- read.transactions(file = "https://raw.githubusercontent.com/klgriffen96/summer23_data624/main/hw_2/GroceryDataSet.csv",
+ sep = ",", format = "basket", 
+ rm.duplicates = FALSE,
+ quote = "", skip = 0,
+ encoding = "unknown")
+
+itemFrequencyPlot(basket_tr, 
+                  topN=10, 
+                  type="absolute", 
+                  xlab="Count", 
+                  ylab="",
+                  col="blue", 
+                  main="Top 10 items",
+                  cex.names=0.8,
+                  horiz=TRUE)
+```
+
+We can confirm that this frequency plot is the same as what we generated before with our EDA step.
+
+
+Association rule mining consists of two subtasks which provide insights into the relationships between items in transactional data: 
+
+- **Frequent itemset generation** 
+- **Rule generation**
+
+#### Support    
+
+First we'll take a look at the itemsets in the data to identify the itemsets that occur most frequently. An **itemset** is a combination of items that appear together in a set of transactions. The **support** measures the frequency or occurrence of an itemset in the data by dividing the number of transactions that contain a specific itemset by the total number of transactions. High support indicates the itemset appears frequently. 
+
+```{r}
+# Frequent itemsets for all items 
+# Interest Measures
+support <- 0.01
+
+parameters = list(
+ support = support,
+ minlen = 2, # Minimal number of items per item set
+ maxlen = 10, # Maximal number of items per item set
+ target = "frequent itemsets"
+ )
+
+support_all <- apriori(basket_tr,
+                       parameter = parameters)
+
+# 10 most frequent items
+support_all |>
+  as("data.frame") |>
+  arrange(desc(support)) |>
+  head(5) |>
+  flextable::flextable() |>
+  flextable::width(width = 2) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
+```
+
+Interpreting these results, the support column indicates the proportion of transactions that contain each itemset: 7.5% of all transactions contain "other vegetables" and "whole milk", 5.7% of all transactions contain "other vegetables "rolls/buns" and "whole milk", and so on. 
+
+#### Rules
+
+Extracting rules allows us to observe the support, confidence, and lift measures of frequent itemsets. 
+
+```{r}
+conf = 0.4
+support <- 0.01
+
+parameters = list(
+ support = support,
+ confidence = conf,
+ minlen = 2, # Minimal number of items per item set
+ maxlen = 10, # Maximal number of items per item set
+ target = "rules"
+ )
+
+rules <- apriori(basket_tr,
+                 parameter= parameters) 
+```
+
+The `arulesViz` package contains a number of functions that enhance graphical display of association rules. The `inspectDT` function outputs an interactive display which can be sorted by column: 
+
+```{r, cache=TRUE}
+inspectDT(rules)
+```
+
+Plotting the rules with the `engine = "plotly"` argument creates an interactive visualization that allows the user to hover over data points in order to view association rule metrics, 
+
+```{r, warning=FALSE, message=FALSE, cache=TRUE}
+plot(rules, jitter=2, engine = "plotly")
+```
+
+
+#### Confidence
+
+Each itemset consists of antecedents and consequents. **Antecedents** are the items or itemsets on the left-hand side of the association rule that represents a set of items or conditions that act as the premise or condition for the rule. **Consequents** are the items or itemsets on the right-hand side of the association rule that represents the set of items or outcomes that are predicted or observed based on the presence of the antecent. **Confidence** measures the likelihood or probability of finding the consequent item(s) in a rule given the antecedent(s). It is the proportion of transactions containing the antecedent that also contain the consequent. High confidence suggests a strong association between the antecedent and consequent. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(confidence)) |>
+  head(10) |>
+  flextable::flextable() |>
+  flextable::width(width = 1) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
+```
+
+We can interpret the confidence that 58% of customers that bought "citrus fruit" and "root vegetables" also bought "other vegetables", and so on. 
+
+#### Lift     
+
+Lift measures the strength of association between the antecedent and consequent items compared to their individual occurrences. It is the ratio of the observed support to the expected support if the antecedent and consequent were independent. Lift greater than 1 indicates a positive association, while lift less than 1 indicates a negative association. 
+
+```{r}
+rules |>
+  as("data.frame") |>
+  arrange(desc(lift)) |>
+  head(10) |>
+  flextable::flextable() |>
+  flextable::width(width = 1) |>
+  flextable::fontsize(size = 10) |>
+  flextable::line_spacing(space = 1) |>
+  flextable::hline(part = "all")
+```
+
+Again, looking at the first line, we can interpret the lift of 3.03 to represent the occurrence of the antecedent is 3.03 times *likelier* when the antecedent items are present, and so on. 
+
