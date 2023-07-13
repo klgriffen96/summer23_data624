@@ -175,7 +175,7 @@ Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount o
 trans <- preProcess(dfimp.x, method = c("YeoJohnson", "center","scale"))
 df.x <- predict(trans, dfimp.x)
 
-## TODO: Grid ## printing plist in loop works fine, but fails with grid.arrange because they are all the same
+# TODO: Grid ## printing plist in loop works fine, but fails with grid.arrange because they are all the same
 # plist <- list()
 # 
 # for (i in 1:length(df.x)){
@@ -205,6 +205,7 @@ dfchem %>% gather(key, value) %>% ggplot(aes(x=value)) + geom_histogram() + face
 
 According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefore models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled.
 
+```{r}
 df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
 
 df_skews |>
@@ -243,7 +244,7 @@ set.seed("09041996")
 df <- df.x
 df$Yield <- dfchem$Yield
 
-## Split training and test
+# split training and testing sets
 train_indices <- createDataPartition(df$Yield,
                                     p = 0.8,
                                     list = FALSE,
