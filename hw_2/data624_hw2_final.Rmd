@@ -44,11 +44,13 @@ This accompanies readings from KJ Chapters 6, 7, and 8.
 Additionally readings on recommender systems along with a recommender system problem was assigned by the professor.
 
 
-## Week 4: KJ 6.3
+## KJ 6.3
 
 **A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of the product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch.**
 
-### (a) Start R and use these commands to load the data:
+### (a)   
+
+Start R and use these commands to load the data:
 
     > library(AppliedPredictiveModeling)
     > data(chemicalManufacturing)
@@ -62,7 +64,9 @@ data(ChemicalManufacturingProcess)
 
 ```
 
-### (b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
+### (b)  
+
+A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in those missing values (e.g., see Sect. 3.8).
 
 We'll first generate a summary to get a first look at the data and to show missing values, then we'll get a count of missing values per variable.
 
@@ -379,11 +383,9 @@ dfimp |>
             type = "lower")
 ```
 
-## Week 5
+## KJ 7.2   
+
 This correlation matrix helps make clear processes that can be increased or decreased to improve yield. We can observe that we might reduce the processes with strong negative correlation with the yield - Manufacturing Processes 13, 17, and 36 - as reducing those processes will increase the yield. Because PLS was the best-performing model, it isn't possible to quantify the increase in yield that could be realized if certain processes were increased or decreased. This is due to the fact that PLS mathematically transforms the actual features into new, latent predictors to remove collinearity among variables while selecting the features that have the greatest contribution to variance. While it isn't possible to directly quantify cost savings, we can say that the greatest savings will be realized by adjusting those with the most relative importance (i.e. manufacturing process #32, 13, 09, 36, etc.).
-
-
-### 7.2
 
 Friedman (1991) introduced several benchmark data sets created by simulation. One of these simulations used the following nonlinear equation to create data:
 
@@ -583,11 +585,13 @@ df_vimp |> flextable() |>
 
 The MARS model does indeed select X1-X5 as the most informative variables! It does set X3 to 0, interestingly. 
 
-### 7.5
+## KJ 7.5
 
 Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
 
-(a) Which nonlinear regression model gives the optimal resampling and test  set performance?
+### (a)   
+
+Which nonlinear regression model gives the optimal resampling and test  set performance?
 
 ```{r}
 set.seed("09041996")
@@ -768,7 +772,9 @@ df_results |> flextable() |>
 The optimal resampling and test performance was from the SVM model.
 
 
-(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+### (b)   
+
+Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
 
 ```{r}
 # variable importance
@@ -778,7 +784,9 @@ plot(var.imp, top = 10)
 
 Among the ten most important variables, six are process and four are biological. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
 
-(c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+### (c)   
+
+Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
 
 ```{r}
 # store 10 most important variable names
@@ -807,7 +815,7 @@ featurePlot(df[,m.imp], cmp_i$Yield,
 
 These plots do reveal the intuition about the relationship with yield. We can see the positive and negative linear relationships between the variables and yield in the FeaturePlot, corresponding to the correlations in the matrix plot.
 
-### 8.1
+## KJ 8.1
 
 Recreate the simulated data from Exercise 7.2
 
@@ -821,7 +829,9 @@ colnames(simulated)[ncol(simulated)] <- "y"
 ```
 
 
-(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores:
+### (a)   
+
+Fit a random forest model to all of the predictors, then estimate the variable importance scores:
 
 ```{r}
 library(randomForest)
@@ -853,7 +863,9 @@ df_rfImp1 %>%
 
 As shown, the uninformative predictors (V6-V10) have a significantly lower relative importance in the model, which is consistent with our earlier findings.
 
-(b) Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+### (b)   
+
+Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
 
 ```{r}
 simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
@@ -908,7 +920,9 @@ df_rfImp3 %>%
 
 As shown in the table, the relative importances of V1 and duplicate1 decreased with the introduction of variable duplicate2. The sum of these three importances are roughly on par with the importance of V1 in the first model and the sum of v1 + duplicate1 in the second model. This is consistent with the way regression trees are sensitive to highly correlated variables.
 
-(c) Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+### (c)    
+
+Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
 
 ```{r, warning=FALSE}
 library(party)
@@ -935,7 +949,9 @@ df_t |> flextable() |>
 Using conditional inference, with the toggle being True, has the effect of lowering the importance of the two variables that are highly correlated with V1; however V1 is also reduced. Variable V1 itself remained third in the order of relative importance among other variables in both cases. It didn't increase in importance and, in fact, actually had a lower magnitude, but the overall effect was that the importances of the duplicate variables were reduced for the toggle being True. This can be attributed to the fact that statistical inference tests are exhaustively conducted against all possible predictors and across all possible split points, thereby penalizing models with higher numbers of splits.
 
 
-(d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+### (d)    
+
+Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
 
 Boosted tree.
 
@@ -994,7 +1010,7 @@ dfr %>%
 
 As shown in the graph, the trees tend to split the variable importance among the three correlated predictors, although most downplayed the importance of the first duplicated variable. 
 
-### 8.2
+## KJ 8.2
 
 Use a simulation to show tree bias with different granularities.
 
@@ -1037,11 +1053,13 @@ df_fit %>%
 As expected, the variables with many discrete values had variable importances that far outweighed the others.
 
 
-### 8.3
+## KJ 8.3
 
 In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
 
-(a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+### (a)   
+
+Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
 
 *The bagging fraction represents the fraction of data selected to train each iteration of the trees. A bagging fraction of 0.1 means 10% of the data is being selected for each iteration; subsequently, each iteration may be built using very different data, so there will be many different important predictors, whereas when, say, 0.9 or 90% of the data is being selected for each iteration, each tree should have similar important predictors, as they are seeing more similar data.*
 
@@ -1049,15 +1067,19 @@ In stochastic gradient boosting the bagging fraction and learning rate will gove
 
 *With a smaller learning rate and a smaller bagging fraction, the variable importance may be more evenly distributed because there will be more trees created which gives more opportunity for a variable to be deemed "important".*
 
-(b) Which model do you think would be more predictive of other samples?
+### (b)   
+
+Which model do you think would be more predictive of other samples?
 
 *A lower learning rate indicates slower learning and fewer errors, while a lower bagging fraction indicates a smaller proportion of training data used for fitting each iteration, which limits the model's exposure to the full range of data, possibly leading to over-fitting. However the lower learning rate may provide more accurate generalization over unseen samples, so we believe the model on the left would be more predictive.* 
 
-(c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+### (c)    
+
+How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
 
 *According to the book, "When regression tree are used as the base learner, simple gradient boosting for regression has two tuning parameters: tree depth and number of iterations. Tree depth in this context is also known as interaction depth, since each subsequential split can be thought of as a higher-level interaction term with all of the other previous split predictors" (KJ p.205). Based on this, increasing the interaction depth means increasing the tree depth and doing so has the possibility of leading to overfitting the data. We would think that a smaller tree depth would lead to a variable importance that more rapidly decreases to 0, while a greater tree depth would have a more gradual decrease to 0.*
 
-### 8.7
+## KJ 8.7
 
 Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
 
@@ -1230,7 +1252,9 @@ dfr[6,] = data.frame(
 
 ```
 
-(a) Which tree-based regression model gives the optimal resampling and test
+### (a)    
+
+Which tree-based regression model gives the optimal resampling and test
 set performance?
 
 ```{r}
@@ -1245,7 +1269,9 @@ dfr |> flextable() |>
 
 The cubist model had the best performance. 
 
-(b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+### (b)   
+
+Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
 
 ```{r}
 plot(varImp(cubModel), top = 10, main = "Cubist Model")
@@ -1254,7 +1280,9 @@ plot(varImp(cubModel), top = 10, main = "Cubist Model")
 In this model we see process variables comprise seven of the top ten most important variables, which is similar to what we observed in the linear and nonlinear models. Among the ten most important variables, six are process and four are biological for the nonlinear model. For the linear model, eight were process and two were biological. The idea that process variables are more important to yield holds. This is convenient because process variables can be controlled.
 
 
-(c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+### (c)   
+
+Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
 
 ```{r, fig.height=10, fig.width=15, warning=FALSE}
 
@@ -1274,7 +1302,7 @@ We can observe the following:
 - The leaf nodes at the bottom represent the terminal nodes that contain the final predicted values for the response for its branch of the tree, we can see that the predicted yield is generally higher when the ManufacturingProcess32 is greater than 0.225, and we can observe where the exceptions to this occur.
 - You can follow the rightmost tree branches down to find how to get the most yield. Similarly you can find weaknesses by going down the left branches to find what creates the lowest yield results.
 
-### Recommender Problem
+## Recommender Problem
 
 Imagine 1000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer's basket -- and therefore 'Market Basket Analysis'.
 
@@ -1284,7 +1312,7 @@ Here is the dataset = [GroceryDataSet.csv]('https://github.com/klgriffen96/summe
 
 Your assignment is to use R to mine the data for association rules. You should report support, confidence and lift and your top 10 rules by lift.
 
-#### Exploratory Data Analysis
+### Exploratory Data Analysis
 
 First, we will pull in the data (stored on github) into a dataframe. The data contains a row for every transaction. For our EDA we will want a row for every item, along with a transaction ID. 
 
@@ -1331,7 +1359,7 @@ baskets |>
   labs(title = "Distribution of Number of Items Purchased per Transaction")
 ```
 
-#### Market Basket Analysis
+### Market Basket Analysis
 
 Now we can shift to using the functionality of the `arules` package. We will read in the file to a transactions object. The data is in "basket" format, meaning every row is a set of items that represent one transaction. After loading we can take a look at the top ten items with the `itemFrequencyPlot` function.
 
@@ -1364,7 +1392,7 @@ Association rule mining consists of two subtasks which provide insights into the
 - **Frequent itemset generation** 
 - **Rule generation**
 
-##### Support    
+#### Support    
 
 First we'll take a look at the itemsets in the data to identify the itemsets that occur most frequently. An **itemset** is a combination of items that appear together in a set of transactions. The **support** measures the frequency or occurrence of an itemset in the data by dividing the number of transactions that contain a specific itemset by the total number of transactions. High support indicates the itemset appears frequently. 
 
@@ -1397,7 +1425,7 @@ support_all |>
 
 Interpreting these results, the support column indicates the proportion of transactions that contain each itemset: 7.5% of all transactions contain "other vegetables" and "whole milk", 5.7% of all transactions contain "other vegetables "rolls/buns" and "whole milk", and so on. 
 
-##### Rules
+#### Rules
 
 Extracting rules allows us to observe the support, confidence, and lift measures of frequent itemsets. 
 
@@ -1430,7 +1458,7 @@ plot(rules, jitter=2, engine = "plotly")
 ```
 
 
-##### Confidence
+#### Confidence
 
 Each itemset consists of antecedents and consequents. **Antecedents** are the items or itemsets on the left-hand side of the association rule that represents a set of items or conditions that act as the premise or condition for the rule. **Consequents** are the items or itemsets on the right-hand side of the association rule that represents the set of items or outcomes that are predicted or observed based on the presence of the antecent. **Confidence** measures the likelihood or probability of finding the consequent item(s) in a rule given the antecedent(s). It is the proportion of transactions containing the antecedent that also contain the consequent. High confidence suggests a strong association between the antecedent and consequent. 
 
@@ -1448,7 +1476,7 @@ rules |>
 
 We can interpret the confidence that 58% of customers that bought "citrus fruit" and "root vegetables" also bought "other vegetables", and so on. 
 
-##### Lift     
+#### Lift     
 
 Lift measures the strength of association between the antecedent and consequent items compared to their individual occurrences. It is the ratio of the observed support to the expected support if the antecedent and consequent were independent. Lift greater than 1 indicates a positive association, while lift less than 1 indicates a negative association. 
 
