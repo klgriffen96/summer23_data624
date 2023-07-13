@@ -18,7 +18,7 @@ always_allow_html: true
 
 ```{r setup, include=FALSE}
 
-knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T)
+knitr::opts_chunk$set(echo=TRUE, fig.width=9, fig.height=6, cache = T, warning = F, message = F)
 library(tidyverse)
 library(flextable)
 library(DMwR2)
@@ -53,7 +53,7 @@ Additionally readings on recommender systems along with a recommender system pro
     > library(AppliedPredictiveModeling)
     > data(chemicalManufacturing)
     
-**The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
+**The matrix process Predictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.**
 
 ```{r}
 
@@ -75,14 +75,16 @@ df_na <- data.frame(Predictor = colnames(dfchem), Missing=colSums(is.na(dfchem))
     arrange(desc(Missing)) 
 
 flextable(df_na) |>
-    width(width = 2) |>
+    #flextable::width(width = 2) |>
     fontsize(size = 10) |>
     line_spacing(space = 0.5) |>
     hline(part = "all")
 
 ```
 
-Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data.
+Overall, the missing data does not appear to be structurally missing, there does not appear to be a pattern, and the missing data is not informatively missing. One option to impute is called Multiple Imputation by Chained Equation, or MICE, and performs multiple regression over the sample data and takes averages. Another option is called KNN-imputation which finds the "nearest neighbors" to a missing value and uses a weighted average to fill them. KNN is suitable if the dataset is small and has mostly continuous data, while MICE performs better with nominal data.
+
+Because the dataset is small and largely continuous, we chose KNN to impute missing values in the dataset.
 
 ```{r}
 dfimp <- knnImputation(ChemicalManufacturingProcess,k=3)
@@ -105,7 +107,7 @@ We can check the distribution of the predictors and see what have near-zero vari
 dfimp.x <- dfimp |> dplyr::select(-Yield)
 nzv <- nearZeroVar(dfimp.x)
 paste0("Inds near zero variance to be removed: ", colnames(dfimp.x[nzv]))
-dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(dfimp.x[nzv]))
+#dfimp.x |> ggplot(aes(x = dfimp.x[[nzv]])) + geom_histogram(bins = 30) +  ggtitle(colnames(dfimp.x[nzv]))
 dfimp.x <- dfimp.x[-nzv]
 
 ```
@@ -165,28 +167,16 @@ df_skews |>
     hline(part = "all")
 ```
 
-Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson. We will also center and scale.
+Generally, a skewness between -0.5 and 0.5 indicates a relatively small amount of skewness (0 = perfect symmetry). Any values lower than -2 or greater than 2 are considered skewed. A positive skew indicates a right-skew, while a negative skew indicates a left-skew. We tried several methods to eliminate the skew - in this case because of the negative numbers the log transformation and BoxCox would not work. For this reason we will use the YeoJohnson transformation. We will also center and scale using the `preProcess` function in the `caret` pacakge.
 
 ```{r}
 trans <- preProcess(dfimp.x, method = c("YeoJohnson", "center","scale"))
 df.x <- predict(trans, dfimp.x)
-
-## TODO: Grid ## printing plist in loop works fine, but fails with grid.arrange because they are all the same
-# plist <- list()
-# 
-# for (i in 1:length(df.x)){
-#   plist[[i]] <- df.x |> ggplot(aes(x = df.x[[i]])) + geom_histogram(bins = 30) + xlab(colnames(df.x)[i])
-# }
-# 
-# library(gridExtra)
-# n <- length(plist)
-# nCol <- floor(sqrt(n))
-# do.call("grid.arrange", c(plist, ncol=nCol))
 ```
 
 We can take another look now at skewness.
 
-```{r}
+```{r, warning=FALSE}
 skew.vals <- apply(df.x, MARGIN = 2, skewness) |>
                   data.frame() |>
                   rename("skew" = 1) |>
@@ -199,8 +189,9 @@ dfchem %>% gather(key, value) %>% ggplot(aes(x=value)) + geom_histogram() + face
 
 ```
 
-According to the book, when there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors, therefore models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). According to the book, prior to conducting PLS the data should be centered and scaled.
+When there are a lot of highly correlated predictors manually removing them can become difficult because of complicated relationships between the predictors; therefore models that can handle collinearity should be considered (pg. 111). Additionally, principle component regression which can be used to handle correlated predictors or cases where there are more predictors than observations can lead to principle components that are not related to the response variable (pg.112). As a result of this, partial least squares (pls) is recommended when there are correlated predictors and a linear regression solution is desired (pg. 112). What PLS does is "PLS finds components that maximally summarize the variation of the predictors while simultaneously requiring these components to have maximum correlation with the response" (pg. 114). Prior to conducting PLS the data should be centered and scaled.
 
+```{r}
 df_skews <- data.frame(Predictor = rownames(skew.vals), Skew = skew.vals$skew)
 
 df_skews |>
@@ -217,7 +208,7 @@ Interestingly, the "YeoJohnson" transformation did not correct all of the skewne
 
 Now we take a look at a correlation matrix.
 
-```{r width = 10}
+```{r, fig.width=10}
 dfimp.x |>
   cor() |>
   round(2) |>
@@ -237,7 +228,7 @@ Now we will split the data into a training and a test set.
 set.seed("09041996")
 
 df <- df.x
-df$Yield <- dfchem$Yield
+df$Yield <- dfchem$Yield 
 
 ## Split training and test
 train_indices <- createDataPartition(df$Yield,
