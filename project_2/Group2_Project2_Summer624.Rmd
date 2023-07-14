@@ -1970,7 +1970,51 @@ tmpdf %>%
 
 ```
 
-As shown, Mnf.Flow was the most informative predictor in the model, followed by Bailing.Lvl and Alch.Rel. *[discuss what the variable importance value means]*
+As shown, Mnf.Flow was the most informative predictor in the model, followed by Bailing.Lvl and Alch.Rel. 
+
+```{r}
+# mnf.flow scatter 
+dfm |> 
+  select(Mnf.Flow, PH) |>
+  plot()
+```
+
+We can see there appears to be three groups of data, values around the -100 range, values around the 0 range, and values greater than zero. However, upon further inspection, we discover there are no zero values in the `mnf.flow` column, only values of 0.2. We discretize the variable and plot violin diagrams of the distributions, 
+
+```{r}
+# mnf.flow violin 
+dfm |>
+  select(PH, Mnf.Flow) |>
+  na.omit() |>
+  mutate(Mnf.Flow = ifelse(Mnf.Flow < 0, "Less than Zero",
+                           "Greater than Zero")) |>
+  ggplot(aes(x=Mnf.Flow, y=PH)) +
+  geom_violin(fill="lightblue") +
+  theme_minimal()
+```
+
+We observe that the `mnf.flow` variable values which are greater than zero are likelier to fall within the critical pH range, as the observations with values less than zero contain the outliers in the range above 9.0 pH. 
+
+```{r}
+dfm |>
+  select(PH, Mnf.Flow) |>
+  na.omit() |>
+  mutate(Mnf.Flow = ifelse(Mnf.Flow <= 0, "Zero or Below",
+                           "Greater than Zero")) |>
+  group_by(Mnf.Flow) |>
+  summarize(mean.ph = mean(PH),
+            median.ph = median(PH),
+            min.ph = min(PH),
+            max.ph = max(PH),
+            sd.ph = sd(PH)) |>
+  as.data.frame() |>
+  t() |>
+  kable() |>
+  kable_styling()
+```
+
+We can see that the mean, median, standard deviation, minimum and maximum pH are all higher for `mnf.flow` values below zero, providing evidence that observations with `mnf.flow` values greater than zero are likelier to fall within the critical pH range.  
+
 
 from the docs:
 
