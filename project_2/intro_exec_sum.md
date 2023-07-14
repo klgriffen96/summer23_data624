@@ -4,7 +4,7 @@ We have been asked by a beverage manufacturing company to predict pH values of t
 
 ## Executive Summary   
 
-A variety of approaches were used employing various combinations of data to achieve a prediction model with a mean average percentage error of 0.8% (less than 1%). For reference, a 0.8% error for a pH level of 7 will result in a pH prediction no greater than 7.056 and no worse than 6.944. We believe that this is an acceptable error range for this business use, as such a variation in pH is inconsequential. Further, our findings identified that the accuracy of the model improved when provided only data that contained brand codes, therefore it is our recommendation to data engineers for best future results that brand code be a required data input. 
+A variety of approaches were used employing various combinations of data to achieve a prediction model with a mean absolute percentage error of 0.8% (less than 1%). For reference, a 0.8% error for a pH level of 7 will result in a pH prediction no greater than 7.056 and no worse than 6.944. We believe that this is an acceptable error range for this business use, as such a variation in pH is inconsequential. Further, our findings identified that the accuracy of the model improved when provided only data that contained brand codes, therefore it is our recommendation to data engineers for best future results that brand code be a required data input. 
 
 Sources:
 1. https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4808596/
