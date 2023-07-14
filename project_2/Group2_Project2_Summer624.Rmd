@@ -1999,7 +1999,7 @@ We observe that the `mnf.flow` variable values which are greater than zero are l
 dfm |>
   select(PH, Mnf.Flow) |>
   na.omit() |>
-  mutate(Mnf.Flow = ifelse(Mnf.Flow <= 0, "Zero or Below",
+  mutate(Mnf.Flow = ifelse(Mnf.Flow <= 0, "Less than Zero",
                            "Greater than Zero")) |>
   group_by(Mnf.Flow) |>
   summarize(mean.ph = mean(PH),
